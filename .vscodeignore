@@ -32,3 +32,4 @@ coverage/**
 # Misc
 *.log
 .git/**
+.env
