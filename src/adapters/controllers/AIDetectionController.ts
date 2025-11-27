@@ -41,6 +41,12 @@ export class AIDetectionController {
         try {
             const commandLine = event.execution.commandLine.value;
             const terminal = event.terminal;
+            const terminalId = this.getTerminalId(terminal);
+
+            // Skip if already have an active session for this terminal
+            if (this.activeAISessions.has(terminalId)) {
+                return;
+            }
 
             if (this.isClaudeCommand(commandLine)) {
                 console.log('Claude Code detected!');
