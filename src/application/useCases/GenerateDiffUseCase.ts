@@ -25,6 +25,11 @@ export class GenerateDiffUseCase {
             diff = await this.gitPort.getDiff(workspaceRoot, relativePath);
         }
 
+        if (!diff || diff.trim() === '') {
+            this.panelPort.removeFile(relativePath);
+            return;
+        }
+
         this.panelPort.postDiff(relativePath, diff);
     }
 

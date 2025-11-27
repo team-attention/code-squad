@@ -6,4 +6,5 @@ export interface IPanelPort {
     updateCommentAdded(comment: Comment): void;
     updateAIType(aiType: string): void;
     postDiff(file: string, diff: string): void;
+    removeFile(file: string): void;
 }
