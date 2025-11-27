@@ -794,7 +794,6 @@ export class SideMirrorPanelAdapter implements IPanelPort {
 
           // Auto-focus on the new file if no file is currently displayed
           if (!currentFile) {
-            expandSidebar();
             item.classList.add('selected');
             vscode.postMessage({ type: 'openFile', file: filePath });
           }
