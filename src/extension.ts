@@ -14,7 +14,7 @@ import { AIDetectionController } from './adapters/controllers/AIDetectionControl
 import { FileWatchController } from './adapters/controllers/FileWatchController';
 
 // Adapters - Presenters
-import { SideMirrorPanelAdapter } from './adapters/presenters/SideMirrorPanelAdapter';
+import { SidecarPanelAdapter } from './adapters/presenters/SidecarPanelAdapter';
 
 // Adapters - Gateways
 import {
@@ -32,7 +32,7 @@ import { InMemorySnapshotRepository } from './infrastructure/repositories/InMemo
 let extensionContext: vscode.ExtensionContext;
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('SideMirror is now active!');
+    console.log('Sidecar is now active!');
     extensionContext = context;
 
     // ===== Infrastructure Layer =====
@@ -75,8 +75,8 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Show Panel
     context.subscriptions.push(
-        vscode.commands.registerCommand('sidemirror.showPanel', () => {
-            const panel = SideMirrorPanelAdapter.show(context);
+        vscode.commands.registerCommand('sidecar.showPanel', () => {
+            const panel = SidecarPanelAdapter.show(context);
 
             // Wire up use cases for panel
             const addCommentUseCase = new AddCommentUseCase(
@@ -109,16 +109,24 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
+    // Focus Panel (used by notification actions)
+    context.subscriptions.push(
+        vscode.commands.registerCommand('sidecar.focusPanel', () => {
+            const panel = SidecarPanelAdapter.currentPanel || SidecarPanelAdapter.show(context);
+            panel.show();
+        })
+    );
+
     // Add Comment from Panel
     context.subscriptions.push(
         vscode.commands.registerCommand(
-            'sidemirror.addCommentFromPanel',
+            'sidecar.addCommentFromPanel',
             async (file, line, endLine, text, codeContext) => {
-                if (!SideMirrorPanelAdapter.currentPanel) return;
+                if (!SidecarPanelAdapter.currentPanel) return;
 
                 const addCommentUseCase = new AddCommentUseCase(
                     commentRepository,
-                    SideMirrorPanelAdapter.currentPanel
+                    SidecarPanelAdapter.currentPanel
                 );
 
                 await addCommentUseCase.execute({
@@ -134,15 +142,15 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Add Comment (Legacy - from editor)
     context.subscriptions.push(
-        vscode.commands.registerCommand('sidemirror.addComment', async () => {
+        vscode.commands.registerCommand('sidecar.addComment', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) {
                 vscode.window.showWarningMessage('Open a file to add a comment');
                 return;
             }
 
-            if (!SideMirrorPanelAdapter.currentPanel) {
-                vscode.window.showWarningMessage('Open SideMirror panel first');
+            if (!SidecarPanelAdapter.currentPanel) {
+                vscode.window.showWarningMessage('Open Sidecar panel first');
                 return;
             }
 
@@ -176,7 +184,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             const addCommentUseCase = new AddCommentUseCase(
                 commentRepository,
-                SideMirrorPanelAdapter.currentPanel
+                SidecarPanelAdapter.currentPanel
             );
 
             await addCommentUseCase.execute({
@@ -187,13 +195,13 @@ export function activate(context: vscode.ExtensionContext) {
                 codeContext,
             });
 
-            vscode.window.showInformationMessage('Comment added to SideMirror');
+            vscode.window.showInformationMessage('Comment added to Sidecar');
         })
     );
 
     // Submit Comments
     context.subscriptions.push(
-        vscode.commands.registerCommand('sidemirror.submitComments', async () => {
+        vscode.commands.registerCommand('sidecar.submitComments', async () => {
             const session = aiDetectionController.getActiveSession();
 
             const submitCommentsUseCase = new SubmitCommentsUseCase(
@@ -208,7 +216,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Add to Whitelist
     context.subscriptions.push(
-        vscode.commands.registerCommand('sidemirror.addToWhitelist', async () => {
+        vscode.commands.registerCommand('sidecar.addToWhitelist', async () => {
             const editor = vscode.window.activeTextEditor;
             const currentFile = editor ? vscode.workspace.asRelativePath(editor.document.uri) : '';
 
@@ -220,7 +228,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             if (!input) return;
 
-            const config = vscode.workspace.getConfiguration('sidemirror');
+            const config = vscode.workspace.getConfiguration('sidecar');
             const currentPatterns = config.get<string[]>('includeFiles', []);
 
             if (currentPatterns.includes(input)) {
@@ -237,8 +245,8 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Manage Whitelist
     context.subscriptions.push(
-        vscode.commands.registerCommand('sidemirror.manageWhitelist', async () => {
-            const config = vscode.workspace.getConfiguration('sidemirror');
+        vscode.commands.registerCommand('sidecar.manageWhitelist', async () => {
+            const config = vscode.workspace.getConfiguration('sidecar');
             const currentPatterns = config.get<string[]>('includeFiles', []);
 
             if (currentPatterns.length === 0) {
@@ -247,7 +255,7 @@ export function activate(context: vscode.ExtensionContext) {
                     'Add Pattern'
                 );
                 if (action === 'Add Pattern') {
-                    vscode.commands.executeCommand('sidemirror.addToWhitelist');
+                    vscode.commands.executeCommand('sidecar.addToWhitelist');
                 }
                 return;
             }
@@ -261,14 +269,14 @@ export function activate(context: vscode.ExtensionContext) {
                 ],
                 {
                     placeHolder: 'Select a pattern to remove or add new one',
-                    title: 'SideMirror Whitelist'
+                    title: 'Sidecar Whitelist'
                 }
             ) as { label: string; action: string; pattern?: string } | undefined;
 
             if (!selected) return;
 
             if (selected.action === 'add') {
-                vscode.commands.executeCommand('sidemirror.addToWhitelist');
+                vscode.commands.executeCommand('sidecar.addToWhitelist');
             } else if (selected.action === 'clear') {
                 const confirm = await vscode.window.showWarningMessage(
                     'Remove all patterns from whitelist?',
@@ -290,9 +298,9 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Update AI Type (called from AIDetectionController)
     context.subscriptions.push(
-        vscode.commands.registerCommand('sidemirror.updateAIType', (aiType: string) => {
-            if (SideMirrorPanelAdapter.currentPanel) {
-                SideMirrorPanelAdapter.currentPanel.updateAIType(aiType);
+        vscode.commands.registerCommand('sidecar.updateAIType', (aiType: string) => {
+            if (SidecarPanelAdapter.currentPanel) {
+                SidecarPanelAdapter.currentPanel.updateAIType(aiType);
             }
         })
     );

@@ -1,1 +1,1 @@
-export { SideMirrorPanelAdapter } from './SideMirrorPanelAdapter';
+export { SidecarPanelAdapter } from './SidecarPanelAdapter';

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import ignore, { Ignore } from 'ignore';
-import { SideMirrorPanelAdapter } from '../presenters/SideMirrorPanelAdapter';
+import { SidecarPanelAdapter } from '../presenters/SidecarPanelAdapter';
 
 export class FileWatchController {
     private gitignore: Ignore;
@@ -38,12 +38,12 @@ export class FileWatchController {
         this.gitignore.add([
             '.git',
             'node_modules',
-            'sidemirror-comments.json'
+            'sidecar-comments.json'
         ]);
     }
 
     private loadIncludePatterns(): void {
-        const config = vscode.workspace.getConfiguration('sidemirror');
+        const config = vscode.workspace.getConfiguration('sidecar');
         const includeFiles = config.get<string[]>('includeFiles', []);
 
         if (includeFiles.length > 0) {
@@ -88,8 +88,8 @@ export class FileWatchController {
 
             if (!this.shouldTrack(uri)) return;
 
-            if (SideMirrorPanelAdapter.currentPanel) {
-                SideMirrorPanelAdapter.currentPanel.updateFileChanged(
+            if (SidecarPanelAdapter.currentPanel) {
+                SidecarPanelAdapter.currentPanel.updateFileChanged(
                     vscode.workspace.asRelativePath(uri)
                 );
             }
@@ -97,7 +97,7 @@ export class FileWatchController {
 
         context.subscriptions.push(
             vscode.workspace.onDidChangeConfiguration(e => {
-                if (e.affectsConfiguration('sidemirror.includeFiles')) {
+                if (e.affectsConfiguration('sidecar.includeFiles')) {
                     this.reload();
                 }
             })

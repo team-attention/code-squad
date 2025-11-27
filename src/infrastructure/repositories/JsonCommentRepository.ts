@@ -13,8 +13,18 @@ export class JsonCommentRepository implements ICommentRepository {
             if (!fs.existsSync(vscodeDir)) {
                 fs.mkdirSync(vscodeDir);
             }
-            this.storagePath = path.join(vscodeDir, 'sidemirror-comments.json');
-            this.loadComments();
+            const legacyPath = path.join(vscodeDir, 'sidemirror-comments.json');
+            const newPath = path.join(vscodeDir, 'sidecar-comments.json');
+
+            this.storagePath = newPath;
+
+            // Migrate legacy comment store if present
+            if (fs.existsSync(legacyPath) && !fs.existsSync(newPath)) {
+                this.loadCommentsFrom(legacyPath);
+                this.persistComments();
+            } else {
+                this.loadCommentsFrom(newPath);
+            }
         }
     }
 
@@ -41,15 +51,17 @@ export class JsonCommentRepository implements ICommentRepository {
         this.persistComments();
     }
 
-    private loadComments(): void {
-        if (this.storagePath && fs.existsSync(this.storagePath)) {
-            try {
-                const data = fs.readFileSync(this.storagePath, 'utf8');
-                const parsed: CommentData[] = JSON.parse(data);
-                this.comments = parsed.map(d => new Comment(d));
-            } catch (e) {
-                console.error('Failed to load comments', e);
-            }
+    private loadCommentsFrom(filePath: string): void {
+        if (!fs.existsSync(filePath)) {
+            return;
+        }
+
+        try {
+            const data = fs.readFileSync(filePath, 'utf8');
+            const parsed: CommentData[] = JSON.parse(data);
+            this.comments = parsed.map(d => new Comment(d));
+        } catch (e) {
+            console.error('Failed to load comments', e);
         }
     }
 

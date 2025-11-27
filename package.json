@@ -1,12 +1,12 @@
 {
-  "name": "sidemirror",
-  "displayName": "SideMirror",
+  "name": "sidecar",
+  "displayName": "Sidecar",
   "description": "Real-time code review interface for AI coding assistants",
-  "version": "0.1.10",
+  "version": "0.0.1",
   "publisher": "JakePark",
   "repository": {
     "type": "git",
-    "url": "https://github.com/team-attention/sidemirror.git"
+    "url": "https://github.com/team-attention/sidecar.git"
   },
   "license": "MIT",
   "engines": {
@@ -31,49 +31,53 @@
   "contributes": {
     "commands": [
       {
-        "command": "sidemirror.showPanel",
-        "title": "SideMirror: Show Panel"
+        "command": "sidecar.showPanel",
+        "title": "Sidecar: Show Panel"
       },
       {
-        "command": "sidemirror.submitComments",
-        "title": "SideMirror: Send Comments to AI"
+        "command": "sidecar.focusPanel",
+        "title": "Sidecar: Focus Panel"
       },
       {
-        "command": "sidemirror.addComment",
-        "title": "SideMirror: Add Comment"
+        "command": "sidecar.submitComments",
+        "title": "Sidecar: Send Comments to AI"
       },
       {
-        "command": "sidemirror.addToWhitelist",
-        "title": "SideMirror: Add File/Pattern to Whitelist"
+        "command": "sidecar.addComment",
+        "title": "Sidecar: Add Comment"
       },
       {
-        "command": "sidemirror.manageWhitelist",
-        "title": "SideMirror: Manage Whitelist"
+        "command": "sidecar.addToWhitelist",
+        "title": "Sidecar: Add File/Pattern to Whitelist"
+      },
+      {
+        "command": "sidecar.manageWhitelist",
+        "title": "Sidecar: Manage Whitelist"
       }
     ],
     "menus": {
       "editor/context": [
         {
-          "command": "sidemirror.addComment",
-          "group": "sidemirror",
+          "command": "sidecar.addComment",
+          "group": "sidecar",
           "when": "editorTextFocus"
         }
       ]
     },
     "configuration": {
-      "title": "SideMirror",
+      "title": "Sidecar",
       "properties": {
-        "sidemirror.autoDetect": {
+        "sidecar.autoDetect": {
           "type": "boolean",
           "default": true,
           "description": "Automatically detect Claude Code, Codex, and Gemini CLI execution"
         },
-        "sidemirror.autoShowPanel": {
+        "sidecar.autoShowPanel": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically show SideMirror panel when AI is detected"
+          "description": "Automatically show Sidecar panel when AI is detected"
         },
-        "sidemirror.includeFiles": {
+        "sidecar.includeFiles": {
           "type": "array",
           "default": [],
           "items": {

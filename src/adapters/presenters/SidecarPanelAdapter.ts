@@ -4,8 +4,8 @@ import { IPanelPort } from '../../application/ports/IPanelPort';
 import { GenerateDiffUseCase } from '../../application/useCases/GenerateDiffUseCase';
 import { AddCommentUseCase } from '../../application/useCases/AddCommentUseCase';
 
-export class SideMirrorPanelAdapter implements IPanelPort {
-    public static currentPanel: SideMirrorPanelAdapter | undefined;
+export class SidecarPanelAdapter implements IPanelPort {
+    public static currentPanel: SidecarPanelAdapter | undefined;
     private readonly panel: vscode.WebviewPanel;
     private readonly context: vscode.ExtensionContext;
     private disposables: vscode.Disposable[] = [];
@@ -14,15 +14,15 @@ export class SideMirrorPanelAdapter implements IPanelPort {
     private addCommentUseCase: AddCommentUseCase | undefined;
     private onSubmitComments: (() => void) | undefined;
 
-    public static show(context: vscode.ExtensionContext): SideMirrorPanelAdapter {
-        if (SideMirrorPanelAdapter.currentPanel) {
-            SideMirrorPanelAdapter.currentPanel.panel.reveal(vscode.ViewColumn.Two);
-            return SideMirrorPanelAdapter.currentPanel;
+    public static show(context: vscode.ExtensionContext): SidecarPanelAdapter {
+        if (SidecarPanelAdapter.currentPanel) {
+            SidecarPanelAdapter.currentPanel.panel.reveal(vscode.ViewColumn.Two);
+            return SidecarPanelAdapter.currentPanel;
         }
 
         const panel = vscode.window.createWebviewPanel(
-            'sidemirror',
-            'SideMirror',
+            'sidecar',
+            'Sidecar',
             vscode.ViewColumn.Two,
             {
                 enableScripts: true,
@@ -31,8 +31,8 @@ export class SideMirrorPanelAdapter implements IPanelPort {
             }
         );
 
-        SideMirrorPanelAdapter.currentPanel = new SideMirrorPanelAdapter(panel, context);
-        return SideMirrorPanelAdapter.currentPanel;
+        SidecarPanelAdapter.currentPanel = new SidecarPanelAdapter(panel, context);
+        return SidecarPanelAdapter.currentPanel;
     }
 
     private constructor(panel: vscode.WebviewPanel, context: vscode.ExtensionContext) {
@@ -111,7 +111,7 @@ export class SideMirrorPanelAdapter implements IPanelPort {
     }
 
     public dispose(): void {
-        SideMirrorPanelAdapter.currentPanel = undefined;
+        SidecarPanelAdapter.currentPanel = undefined;
         this.panel.dispose();
         while (this.disposables.length) {
             const x = this.disposables.pop();
@@ -131,7 +131,7 @@ export class SideMirrorPanelAdapter implements IPanelPort {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>SideMirror</title>
+      <title>Sidecar</title>
       <style>
         * {
           box-sizing: border-box;
@@ -630,7 +630,7 @@ export class SideMirrorPanelAdapter implements IPanelPort {
     <body class="sidebar-collapsed">
       <div class="sidebar collapsed">
         <div class="header">
-          <h2>SideMirror</h2>
+          <h2>Sidecar</h2>
           <div class="status" id="status-badge">
             <span id="ai-status-dot">●</span>
             <span id="ai-type">Ready</span>

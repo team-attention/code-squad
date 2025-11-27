@@ -3,7 +3,7 @@ import { AISession, AIType } from '../../domain/entities/AISession';
 import { ISnapshotRepository } from '../../domain/repositories/ISnapshotRepository';
 import { CaptureSnapshotsUseCase } from '../../application/useCases/CaptureSnapshotsUseCase';
 import { VscodeTerminalGateway } from '../gateways/VscodeTerminalGateway';
-import { SideMirrorPanelAdapter } from '../presenters/SideMirrorPanelAdapter';
+import { SidecarPanelAdapter } from '../presenters/SidecarPanelAdapter';
 
 export class AIDetectionController {
     private activeAISessions = new Map<string, AISession>();
@@ -50,13 +50,13 @@ export class AIDetectionController {
 
             if (this.isClaudeCommand(commandLine)) {
                 console.log('Claude Code detected!');
-                await this.activateSideMirror('claude', terminal);
+                await this.activateSidecar('claude', terminal);
             } else if (this.isCodexCommand(commandLine)) {
                 console.log('Codex detected!');
-                await this.activateSideMirror('codex', terminal);
+                await this.activateSidecar('codex', terminal);
             } else if (this.isGeminiCommand(commandLine)) {
                 console.log('Gemini CLI detected!');
-                await this.activateSideMirror('gemini', terminal);
+                await this.activateSidecar('gemini', terminal);
             }
         } catch (error) {
             console.error('Error in handleCommandStart:', error);
@@ -80,11 +80,11 @@ export class AIDetectionController {
         );
     }
 
-    private async activateSideMirror(type: AIType, terminal: vscode.Terminal): Promise<void> {
+    private async activateSidecar(type: AIType, terminal: vscode.Terminal): Promise<void> {
         const terminalId = this.getTerminalId(terminal);
 
         try {
-            const config = vscode.workspace.getConfiguration('sidemirror');
+            const config = vscode.workspace.getConfiguration('sidecar');
             const includePatterns = config.get<string[]>('includeFiles', []);
             await this.captureSnapshotsUseCase.execute(includePatterns);
         } catch (error) {
@@ -93,23 +93,23 @@ export class AIDetectionController {
 
         await this.moveTerminalToSide();
 
-        await vscode.commands.executeCommand('sidemirror.showPanel');
+        await vscode.commands.executeCommand('sidecar.showPanel');
 
         const session = AISession.create(type, terminalId);
         this.activeAISessions.set(terminalId, session);
         this.terminalGateway.registerTerminal(terminalId, terminal);
 
         vscode.window.showInformationMessage(
-            `${session.displayName} detected! SideMirror is now active.`,
+            `${session.displayName} detected! Sidecar is now active.`,
             'Show Panel'
         ).then(action => {
             if (action === 'Show Panel') {
-                vscode.commands.executeCommand('sidemirror.focusPanel');
+                vscode.commands.executeCommand('sidecar.focusPanel');
             }
         });
 
-        if (SideMirrorPanelAdapter.currentPanel) {
-            SideMirrorPanelAdapter.currentPanel.updateAIType(type);
+        if (SidecarPanelAdapter.currentPanel) {
+            SidecarPanelAdapter.currentPanel.updateAIType(type);
         }
     }
 
@@ -119,7 +119,7 @@ export class AIDetectionController {
 
     private async moveTerminalToSide(): Promise<void> {
         // Skip if panel is already open to avoid terminal showing on every Claude command
-        if (SideMirrorPanelAdapter.currentPanel) {
+        if (SidecarPanelAdapter.currentPanel) {
             return;
         }
 
@@ -152,7 +152,7 @@ export class AIDetectionController {
             if (this.activeAISessions.size === 0) {
                 this.snapshotRepository.clear();
                 vscode.window.showInformationMessage(
-                    'No active AI sessions. SideMirror panel will remain open.'
+                    'No active AI sessions. Sidecar panel will remain open.'
                 );
             }
         }
