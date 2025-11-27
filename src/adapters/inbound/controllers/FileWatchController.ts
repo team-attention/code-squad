@@ -2,17 +2,28 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import ignore, { Ignore } from 'ignore';
-import { SidecarPanelAdapter } from '../../outbound/presenters/SidecarPanelAdapter';
+import { IPanelStateManager } from '../../../application/services/IPanelStateManager';
+import { IGenerateDiffUseCase } from '../../../application/ports/inbound/IGenerateDiffUseCase';
 
 export class FileWatchController {
     private gitignore: Ignore;
     private includePatterns: Ignore;
     private workspaceRoot: string | undefined;
+    private panelStateManager: IPanelStateManager | undefined;
+    private generateDiffUseCase: IGenerateDiffUseCase | undefined;
 
     constructor() {
         this.gitignore = ignore();
         this.includePatterns = ignore();
         this.initialize();
+    }
+
+    setPanelStateManager(panelStateManager: IPanelStateManager): void {
+        this.panelStateManager = panelStateManager;
+    }
+
+    setGenerateDiffUseCase(generateDiffUseCase: IGenerateDiffUseCase): void {
+        this.generateDiffUseCase = generateDiffUseCase;
     }
 
     private initialize(): void {
@@ -88,10 +99,26 @@ export class FileWatchController {
 
             if (!this.shouldTrack(uri)) return;
 
-            if (SidecarPanelAdapter.currentPanel) {
-                SidecarPanelAdapter.currentPanel.updateFileChanged(
-                    vscode.workspace.asRelativePath(uri)
-                );
+            if (this.panelStateManager) {
+                const relativePath = vscode.workspace.asRelativePath(uri);
+                const fileName = path.basename(relativePath);
+                const currentState = this.panelStateManager.getState();
+                const isFirstFile = currentState.files.length === 0;
+                const isSelectedFile = currentState.selectedFile === relativePath;
+
+                // Add file to list
+                this.panelStateManager.addFile({
+                    path: relativePath,
+                    name: fileName,
+                    status: 'modified',
+                });
+
+                // Auto-generate diff if:
+                // 1. First file added (auto-select)
+                // 2. Currently selected file was modified (refresh)
+                if (this.generateDiffUseCase && (isFirstFile || isSelectedFile)) {
+                    await this.generateDiffUseCase.execute(relativePath);
+                }
             }
         };
 

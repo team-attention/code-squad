@@ -1,8 +1,9 @@
 import { DiffService } from '../../domain/services/DiffService';
+import { DiffResult } from '../../domain/entities/Diff';
 import { ISnapshotRepository } from '../ports/outbound/ISnapshotRepository';
 import { IFileSystemPort } from '../ports/outbound/IFileSystemPort';
 import { IGitPort } from '../ports/outbound/IGitPort';
-import { IPanelPort } from '../ports/outbound/IPanelPort';
+import { IPanelStateManager } from '../services/IPanelStateManager';
 import { IGenerateDiffUseCase } from '../ports/inbound/IGenerateDiffUseCase';
 
 export class GenerateDiffUseCase implements IGenerateDiffUseCase {
@@ -10,7 +11,7 @@ export class GenerateDiffUseCase implements IGenerateDiffUseCase {
         private readonly snapshotRepository: ISnapshotRepository,
         private readonly fileSystemPort: IFileSystemPort,
         private readonly gitPort: IGitPort,
-        private readonly panelPort: IPanelPort,
+        private readonly panelStateManager: IPanelStateManager,
         private readonly diffService: DiffService
     ) {}
 
@@ -18,23 +19,25 @@ export class GenerateDiffUseCase implements IGenerateDiffUseCase {
         const workspaceRoot = this.fileSystemPort.getWorkspaceRoot();
         if (!workspaceRoot) return;
 
-        let diff = '';
+        let diffResult: DiffResult;
 
         if (this.snapshotRepository.has(relativePath)) {
-            diff = await this.generateSnapshotDiff(relativePath);
+            diffResult = await this.generateSnapshotDiff(relativePath);
         } else {
-            diff = await this.gitPort.getDiff(workspaceRoot, relativePath);
+            const rawDiff = await this.gitPort.getDiff(workspaceRoot, relativePath);
+            diffResult = this.diffService.parseUnifiedDiff(relativePath, rawDiff);
         }
 
-        if (!diff || diff.trim() === '') {
-            this.panelPort.removeFile(relativePath);
+        if (diffResult.hunks.length === 0) {
+            this.panelStateManager.removeFile(relativePath);
             return;
         }
 
-        this.panelPort.postDiff(relativePath, diff);
+        // Update panel state - triggers render
+        this.panelStateManager.showDiff(diffResult);
     }
 
-    private async generateSnapshotDiff(relativePath: string): Promise<string> {
+    private async generateSnapshotDiff(relativePath: string): Promise<DiffResult> {
         const snapshot = await this.snapshotRepository.findByPath(relativePath);
         const absolutePath = this.fileSystemPort.toAbsolutePath(relativePath);
 
@@ -44,14 +47,16 @@ export class GenerateDiffUseCase implements IGenerateDiffUseCase {
                 currentContent = await this.fileSystemPort.readFile(absolutePath);
             }
         } catch {
-            return '';
+            return { file: relativePath, hunks: [], stats: { additions: 0, deletions: 0 } };
         }
 
         if (snapshot === undefined) {
-            if (!currentContent) return '';
-            return this.diffService.generateNewFileDiff(currentContent);
+            if (!currentContent) {
+                return { file: relativePath, hunks: [], stats: { additions: 0, deletions: 0 } };
+            }
+            return this.diffService.generateNewFileStructuredDiff(relativePath, currentContent);
         }
 
-        return this.diffService.generateUnifiedDiff(snapshot.content, currentContent);
+        return this.diffService.generateStructuredDiff(relativePath, snapshot.content, currentContent);
     }
 }

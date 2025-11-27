@@ -9,6 +9,9 @@ import { SubmitCommentsUseCase } from './application/useCases/SubmitCommentsUseC
 import { GenerateDiffUseCase } from './application/useCases/GenerateDiffUseCase';
 import { CaptureSnapshotsUseCase } from './application/useCases/CaptureSnapshotsUseCase';
 
+// Application - Services
+import { PanelStateManager } from './application/services/PanelStateManager';
+
 // Adapters - Inbound (Controllers)
 import { AIDetectionController } from './adapters/inbound/controllers/AIDetectionController';
 import { FileWatchController } from './adapters/inbound/controllers/FileWatchController';
@@ -41,6 +44,9 @@ export function activate(context: vscode.ExtensionContext) {
     // ===== Domain Layer =====
     const diffService = new DiffService();
 
+    // ===== Application Layer - Services =====
+    const panelStateManager = new PanelStateManager();
+
     // ===== Adapters Layer - Gateways =====
     const terminalGateway = new VscodeTerminalGateway();
     const fileSystemGateway = new VscodeFileSystemGateway();
@@ -55,6 +61,25 @@ export function activate(context: vscode.ExtensionContext) {
         fileGlobber
     );
 
+    const addCommentUseCase = new AddCommentUseCase(
+        commentRepository,
+        panelStateManager
+    );
+
+    const generateDiffUseCase = new GenerateDiffUseCase(
+        snapshotRepository,
+        fileSystemGateway,
+        gitGateway,
+        panelStateManager,
+        diffService
+    );
+
+    const submitCommentsUseCase = new SubmitCommentsUseCase(
+        commentRepository,
+        terminalGateway,
+        notificationGateway
+    );
+
     // ===== Adapters Layer - Controllers =====
     const aiDetectionController = new AIDetectionController(
         captureSnapshotsUseCase,
@@ -62,8 +87,11 @@ export function activate(context: vscode.ExtensionContext) {
         terminalGateway,
         () => extensionContext
     );
+    aiDetectionController.setPanelStateManager(panelStateManager);
 
     const fileWatchController = new FileWatchController();
+    fileWatchController.setPanelStateManager(panelStateManager);
+    fileWatchController.setGenerateDiffUseCase(generateDiffUseCase);
 
     // Activate Controllers
     aiDetectionController.activate(context);
@@ -74,28 +102,12 @@ export function activate(context: vscode.ExtensionContext) {
     // Show Panel
     context.subscriptions.push(
         vscode.commands.registerCommand('sidecar.showPanel', () => {
-            const panel = SidecarPanelAdapter.show(context);
+            const panel = SidecarPanelAdapter.create(context);
 
-            // Wire up use cases for panel
-            const addCommentUseCase = new AddCommentUseCase(
-                commentRepository,
-                panel
-            );
+            // Connect panel to state manager
+            panelStateManager.setPanelPort(panel);
 
-            const generateDiffUseCase = new GenerateDiffUseCase(
-                snapshotRepository,
-                fileSystemGateway,
-                gitGateway,
-                panel,
-                diffService
-            );
-
-            const submitCommentsUseCase = new SubmitCommentsUseCase(
-                commentRepository,
-                terminalGateway,
-                notificationGateway
-            );
-
+            // Set up inbound handlers for panel
             panel.setUseCases(
                 generateDiffUseCase,
                 addCommentUseCase,
@@ -104,14 +116,22 @@ export function activate(context: vscode.ExtensionContext) {
                     submitCommentsUseCase.execute(session);
                 }
             );
+
+            // Clean up when panel is disposed
+            panel.onDispose(() => {
+                panelStateManager.clearPanelPort();
+            });
         })
     );
 
     // Focus Panel (used by notification actions)
     context.subscriptions.push(
         vscode.commands.registerCommand('sidecar.focusPanel', () => {
-            const panel = SidecarPanelAdapter.currentPanel || SidecarPanelAdapter.show(context);
-            panel.show();
+            if (!SidecarPanelAdapter.currentPanel) {
+                vscode.commands.executeCommand('sidecar.showPanel');
+                return;
+            }
+            SidecarPanelAdapter.currentPanel.show();
         })
     );
 
@@ -120,13 +140,6 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand(
             'sidecar.addCommentFromPanel',
             async (file, line, endLine, text, codeContext) => {
-                if (!SidecarPanelAdapter.currentPanel) return;
-
-                const addCommentUseCase = new AddCommentUseCase(
-                    commentRepository,
-                    SidecarPanelAdapter.currentPanel
-                );
-
                 await addCommentUseCase.execute({
                     file,
                     line,
@@ -180,11 +193,6 @@ export function activate(context: vscode.ExtensionContext) {
                 );
             }
 
-            const addCommentUseCase = new AddCommentUseCase(
-                commentRepository,
-                SidecarPanelAdapter.currentPanel
-            );
-
             await addCommentUseCase.execute({
                 file,
                 line: startLine,
@@ -201,13 +209,6 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('sidecar.submitComments', async () => {
             const session = aiDetectionController.getActiveSession();
-
-            const submitCommentsUseCase = new SubmitCommentsUseCase(
-                commentRepository,
-                terminalGateway,
-                notificationGateway
-            );
-
             await submitCommentsUseCase.execute(session);
         })
     );
@@ -297,9 +298,7 @@ export function activate(context: vscode.ExtensionContext) {
     // Update AI Type (called from AIDetectionController)
     context.subscriptions.push(
         vscode.commands.registerCommand('sidecar.updateAIType', (aiType: string) => {
-            if (SidecarPanelAdapter.currentPanel) {
-                SidecarPanelAdapter.currentPanel.updateAIType(aiType);
-            }
+            panelStateManager.setAIStatus({ active: true, type: aiType });
         })
     );
 }

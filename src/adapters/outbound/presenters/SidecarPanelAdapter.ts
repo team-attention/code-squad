@@ -1,20 +1,28 @@
 import * as vscode from 'vscode';
-import { Comment } from '../../../domain/entities/Comment';
 import { IPanelPort } from '../../../application/ports/outbound/IPanelPort';
+import { PanelState } from '../../../application/ports/outbound/PanelState';
 import { IGenerateDiffUseCase } from '../../../application/ports/inbound/IGenerateDiffUseCase';
 import { IAddCommentUseCase } from '../../../application/ports/inbound/IAddCommentUseCase';
 
+/**
+ * Webview Panel Adapter
+ *
+ * Implements IPanelPort with a single render(state) method.
+ * Also handles inbound messages from webview (user interactions).
+ */
 export class SidecarPanelAdapter implements IPanelPort {
     public static currentPanel: SidecarPanelAdapter | undefined;
     private readonly panel: vscode.WebviewPanel;
     private readonly context: vscode.ExtensionContext;
     private disposables: vscode.Disposable[] = [];
+    private onDisposeCallback: (() => void) | undefined;
 
+    // Inbound handlers (webview → application)
     private generateDiffUseCase: IGenerateDiffUseCase | undefined;
     private addCommentUseCase: IAddCommentUseCase | undefined;
     private onSubmitComments: (() => void) | undefined;
 
-    public static show(context: vscode.ExtensionContext): SidecarPanelAdapter {
+    public static create(context: vscode.ExtensionContext): SidecarPanelAdapter {
         if (SidecarPanelAdapter.currentPanel) {
             SidecarPanelAdapter.currentPanel.panel.reveal(vscode.ViewColumn.Two);
             return SidecarPanelAdapter.currentPanel;
@@ -39,17 +47,18 @@ export class SidecarPanelAdapter implements IPanelPort {
         this.panel = panel;
         this.context = context;
 
-        this.update();
+        this.initializeWebview();
 
         this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
 
+        // Handle inbound messages from webview
         this.panel.webview.onDidReceiveMessage(
             async message => {
                 switch (message.type) {
                     case 'submitComments':
                         this.onSubmitComments?.();
                         break;
-                    case 'openFile':
+                    case 'selectFile':
                         if (message.file && this.generateDiffUseCase) {
                             await this.generateDiffUseCase.execute(message.file);
                         }
@@ -72,6 +81,9 @@ export class SidecarPanelAdapter implements IPanelPort {
         );
     }
 
+    /**
+     * Set inbound handlers for webview interactions
+     */
     setUseCases(
         generateDiffUseCase: IGenerateDiffUseCase,
         addCommentUseCase: IAddCommentUseCase,
@@ -82,36 +94,35 @@ export class SidecarPanelAdapter implements IPanelPort {
         this.onSubmitComments = onSubmitComments;
     }
 
+    /**
+     * Set callback for when panel is disposed
+     */
+    onDispose(callback: () => void): void {
+        this.onDisposeCallback = callback;
+    }
+
+    // ===== IPanelPort implementation =====
+
+    /**
+     * Render the panel with the given state
+     * This is the single entry point for UI updates
+     */
+    render(state: PanelState): void {
+        this.panel.webview.postMessage({
+            type: 'render',
+            state,
+        });
+    }
+
     show(): void {
         this.panel.reveal(vscode.ViewColumn.Two);
     }
 
-    updateFileChanged(file: string): void {
-        this.panel.webview.postMessage({ type: 'fileChanged', file });
-    }
-
-    updateCommentAdded(comment: Comment): void {
-        this.panel.webview.postMessage({ type: 'commentAdded', comment: comment.toData() });
-    }
-
-    updateAIType(aiType: string): void {
-        this.panel.webview.postMessage({ type: 'aiTypeChanged', aiType });
-    }
-
-    postDiff(file: string, diff: string): void {
-        this.panel.webview.postMessage({
-            type: 'displayDiff',
-            file,
-            diff,
-        });
-    }
-
-    removeFile(file: string): void {
-        this.panel.webview.postMessage({ type: 'fileRemoved', file });
-    }
+    // ===== Private methods =====
 
     public dispose(): void {
         SidecarPanelAdapter.currentPanel = undefined;
+        this.onDisposeCallback?.();
         this.panel.dispose();
         while (this.disposables.length) {
             const x = this.disposables.pop();
@@ -121,7 +132,7 @@ export class SidecarPanelAdapter implements IPanelPort {
         }
     }
 
-    private update(): void {
+    private initializeWebview(): void {
         this.panel.webview.html = this.getHtmlForWebview();
     }
 
@@ -673,20 +684,23 @@ export class SidecarPanelAdapter implements IPanelPort {
 
       <script>
         const vscode = acquireVsCodeApi();
-        let currentFile = '';
+
+        // ===== Local UI state (not from application) =====
         let selectedLineNum = null;
         let selectedLineElement = null;
         let selectionStartLine = null;
         let selectionEndLine = null;
         let isSelecting = false;
+        let isResizing = false;
+        let sidebarWidth = 320;
 
+        // ===== DOM references =====
         const bodyEl = document.body;
         const sidebarEl = document.querySelector('.sidebar');
         const toggleButton = document.getElementById('toggle-sidebar');
         const resizer = document.getElementById('panel-resizer');
-        let isResizing = false;
-        let sidebarWidth = 320;
 
+        // ===== Sidebar toggle =====
         function expandSidebar() {
           bodyEl.classList.remove('sidebar-collapsed');
           sidebarEl.classList.remove('collapsed');
@@ -704,13 +718,10 @@ export class SidecarPanelAdapter implements IPanelPort {
         }
 
         toggleButton.addEventListener('click', () => {
-          if (bodyEl.classList.contains('sidebar-collapsed')) {
-            expandSidebar();
-          } else {
-            collapseSidebar();
-          }
+          bodyEl.classList.contains('sidebar-collapsed') ? expandSidebar() : collapseSidebar();
         });
 
+        // ===== Resizer =====
         resizer.addEventListener('mousedown', (e) => {
           if (bodyEl.classList.contains('sidebar-collapsed')) return;
           isResizing = true;
@@ -721,8 +732,7 @@ export class SidecarPanelAdapter implements IPanelPort {
 
         document.addEventListener('mousemove', (e) => {
           if (!isResizing) return;
-          const newWidth = window.innerWidth - e.clientX;
-          const clampedWidth = Math.max(150, Math.min(600, newWidth));
+          const clampedWidth = Math.max(150, Math.min(600, window.innerWidth - e.clientX));
           sidebarWidth = clampedWidth;
           bodyEl.style.gridTemplateColumns = \`1fr 4px \${clampedWidth}px\`;
         });
@@ -735,221 +745,192 @@ export class SidecarPanelAdapter implements IPanelPort {
           bodyEl.style.transition = '';
         });
 
+        // ===== Submit button =====
         document.getElementById('submit-comments').addEventListener('click', () => {
           vscode.postMessage({ type: 'submitComments' });
         });
 
+        // ===== Single message handler - state-based rendering =====
         window.addEventListener('message', event => {
-          const message = event.data;
-          switch (message.type) {
-            case 'fileChanged':
-              addFile(message.file);
-              // Auto-refresh diff if currently viewing this file
-              if (currentFile === message.file) {
-                vscode.postMessage({ type: 'openFile', file: message.file });
-              }
-              break;
-            case 'commentAdded':
-              addComment(message.comment);
-              break;
-            case 'aiTypeChanged':
-              updateAIType(message.aiType);
-              break;
-            case 'displayDiff':
-              renderDiff(message.file, message.diff);
-              break;
-            case 'fileRemoved':
-              removeFileFromList(message.file);
-              break;
+          const { type, state } = event.data;
+          if (type === 'render' && state) {
+            renderState(state);
           }
         });
 
-        function addFile(filePath) {
-          const list = document.getElementById('files-list');
-          if (list.querySelector('.empty-text')) {
-            list.innerHTML = '';
-          }
-
-          if (Array.from(list.children).find(c => c.dataset.file === filePath)) return;
-
-          const item = document.createElement('div');
-          item.className = 'file-item';
-          item.dataset.file = filePath;
-
-          const fileName = filePath.split('/').pop();
-
-          item.innerHTML = \`
-            <span class="file-icon">📄</span>
-            <span class="file-name" title="\${filePath}">\${fileName}</span>
-            <span class="file-badge">M</span>
-          \`;
-
-          item.onclick = () => {
-            document.querySelectorAll('.file-item').forEach(f => f.classList.remove('selected'));
-            item.classList.add('selected');
-            vscode.postMessage({ type: 'openFile', file: filePath });
-          };
-
-          list.appendChild(item);
-
-          // Auto-focus on the new file if no file is currently displayed
-          if (!currentFile) {
-            item.classList.add('selected');
-            vscode.postMessage({ type: 'openFile', file: filePath });
-          }
+        /**
+         * Main render function - renders entire UI from state
+         */
+        function renderState(state) {
+          renderFileList(state.files, state.selectedFile);
+          renderComments(state.comments);
+          renderAIStatus(state.aiStatus);
+          renderDiff(state.diff, state.selectedFile);
         }
 
-        function renderDiff(file, diffText) {
-          currentFile = file;
+        // ===== File List Rendering =====
+        function renderFileList(files, selectedFile) {
+          const list = document.getElementById('files-list');
 
-          document.querySelector('.diff-header-title').textContent = file;
-
-          const viewer = document.getElementById('diff-viewer');
-
-          if (!diffText || diffText.trim() === '') {
-            viewer.innerHTML = '<div class="placeholder"><div class="placeholder-icon">✓</div><div class="placeholder-text">No changes in this file</div></div>';
-            document.getElementById('diff-stats').innerHTML = '';
+          if (!files || files.length === 0) {
+            list.innerHTML = '<div class="empty-text">Waiting for changes...</div>';
             return;
           }
 
-          const { html, additions, deletions } = parseDiff(diffText);
+          list.innerHTML = files.map(file => {
+            const isSelected = file.path === selectedFile;
+            const statusBadge = file.status === 'added' ? 'A' : file.status === 'deleted' ? 'D' : 'M';
+            return \`
+              <div class="file-item \${isSelected ? 'selected' : ''}" data-file="\${file.path}">
+                <span class="file-icon">📄</span>
+                <span class="file-name" title="\${file.path}">\${file.name}</span>
+                <span class="file-badge">\${statusBadge}</span>
+              </div>
+            \`;
+          }).join('');
 
-          document.getElementById('diff-stats').innerHTML = \`
-            <span class="stat-added">+\${additions}</span>
-            <span class="stat-removed">-\${deletions}</span>
-          \`;
-
-          viewer.innerHTML = '<table class="diff-table">' + html + '</table>';
-
-          setupLineHoverHandlers();
+          // Add click handlers
+          list.querySelectorAll('.file-item').forEach(item => {
+            item.onclick = () => {
+              vscode.postMessage({ type: 'selectFile', file: item.dataset.file });
+            };
+          });
         }
 
-        function parseDiff(diffText) {
-          const lines = diffText.split('\\n');
-          let html = '';
-          let additions = 0;
-          let deletions = 0;
-          let oldLineNum = 0;
-          let newLineNum = 0;
+        // ===== Comments Rendering =====
+        function renderComments(comments) {
+          const list = document.getElementById('comments-list');
 
-          for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-
-            if (line.startsWith('diff --git') ||
-                line.startsWith('index ') ||
-                line.startsWith('---') ||
-                line.startsWith('+++') ||
-                line.startsWith('\\\\')) {
-              continue;
-            }
-
-            if (line.startsWith('@@')) {
-              const match = line.match(/@@ -(\\d+),?\\d* \\+(\\d+),?\\d* @@(.*)/);
-              if (match) {
-                oldLineNum = parseInt(match[1], 10);
-                newLineNum = parseInt(match[2], 10);
-                html += \`<tr><td colspan="4" class="diff-hunk-header">\${escapeHtml(line)}</td></tr>\`;
-              }
-              continue;
-            }
-
-            let lineClass = 'context';
-            let prefix = ' ';
-            let oldNum = '';
-            let newNum = '';
-            let content = line;
-
-            if (line.startsWith('+')) {
-              lineClass = 'addition';
-              prefix = '+';
-              content = line.substring(1);
-              newNum = newLineNum++;
-              additions++;
-            } else if (line.startsWith('-')) {
-              lineClass = 'deletion';
-              prefix = '-';
-              content = line.substring(1);
-              oldNum = oldLineNum++;
-              deletions++;
-            } else {
-              content = line.startsWith(' ') ? line.substring(1) : line;
-              oldNum = oldLineNum++;
-              newNum = newLineNum++;
-            }
-
-            const displayLineNum = newNum || oldNum || '';
-            const showCommentBtn = lineClass === 'addition' || lineClass === 'deletion';
-
-            html += \`
-              <tr class="diff-line \${lineClass}" data-line="\${displayLineNum}">
-                <td class="comment-btn-cell">\${showCommentBtn ? \`<button class="line-comment-btn" data-line="\${displayLineNum}">+</button>\` : ''}</td>
-                <td class="diff-line-num">\${oldNum}</td>
-                <td class="diff-line-num">\${newNum}</td>
-                <td class="diff-line-content" data-prefix="\${prefix}">\${escapeHtml(content)}</td>
-              </tr>
-            \`;
+          if (!comments || comments.length === 0) {
+            list.innerHTML = '<div class="empty-text">No comments yet</div>';
+            return;
           }
 
-          return { html, additions, deletions };
+          list.innerHTML = comments.map(comment => {
+            const lineDisplay = comment.endLine
+              ? \`\${comment.line}-\${comment.endLine}\`
+              : comment.line;
+            return \`
+              <div class="comment-item">
+                <div class="comment-meta">\${comment.file}:\${lineDisplay}</div>
+                <div>\${escapeHtml(comment.text)}</div>
+              </div>
+            \`;
+          }).join('');
         }
 
-        function escapeHtml(text) {
-          const div = document.createElement('div');
-          div.textContent = text;
-          return div.innerHTML;
+        // ===== AI Status Rendering =====
+        function renderAIStatus(aiStatus) {
+          const badge = document.getElementById('status-badge');
+          const typeEl = document.getElementById('ai-type');
+
+          if (aiStatus.active && aiStatus.type) {
+            const label = aiStatus.type === 'claude' ? 'Claude' :
+                          aiStatus.type === 'codex' ? 'Codex' :
+                          aiStatus.type === 'gemini' ? 'Gemini' : aiStatus.type;
+            typeEl.textContent = label;
+            badge.classList.add('active');
+          } else {
+            typeEl.textContent = 'Ready';
+            badge.classList.remove('active');
+          }
         }
 
-        function setupLineHoverHandlers() {
+        // ===== Diff Rendering =====
+        function renderDiff(diff, selectedFile) {
+          const header = document.querySelector('.diff-header-title');
+          const stats = document.getElementById('diff-stats');
           const viewer = document.getElementById('diff-viewer');
 
-          viewer.addEventListener('click', (e) => {
+          if (!diff || !diff.hunks || diff.hunks.length === 0) {
+            header.textContent = selectedFile || 'Select a file to review';
+            stats.innerHTML = '';
+            viewer.innerHTML = \`
+              <div class="placeholder">
+                <div class="placeholder-icon">\${selectedFile ? '✓' : '📝'}</div>
+                <div class="placeholder-text">\${selectedFile ? 'No changes in this file' : 'Select a modified file to view changes'}</div>
+              </div>
+            \`;
+            return;
+          }
+
+          header.textContent = diff.file;
+          stats.innerHTML = \`
+            <span class="stat-added">+\${diff.stats.additions}</span>
+            <span class="stat-removed">-\${diff.stats.deletions}</span>
+          \`;
+
+          viewer.innerHTML = '<table class="diff-table">' + renderHunksToHtml(diff.hunks) + '</table>';
+          setupLineHoverHandlers(diff.file);
+        }
+
+        function renderHunksToHtml(hunks) {
+          let html = '';
+          for (const hunk of hunks) {
+            html += \`<tr><td colspan="4" class="diff-hunk-header">\${escapeHtml(hunk.header)}</td></tr>\`;
+            for (const line of hunk.lines) {
+              const lineClass = line.type;
+              const prefix = line.type === 'addition' ? '+' : line.type === 'deletion' ? '-' : ' ';
+              const oldNum = line.oldLineNumber || '';
+              const newNum = line.newLineNumber || '';
+              const displayLineNum = newNum || oldNum || '';
+              const showCommentBtn = line.type === 'addition' || line.type === 'deletion';
+              html += \`
+                <tr class="diff-line \${lineClass}" data-line="\${displayLineNum}">
+                  <td class="comment-btn-cell">\${showCommentBtn ? \`<button class="line-comment-btn" data-line="\${displayLineNum}">+</button>\` : ''}</td>
+                  <td class="diff-line-num">\${oldNum}</td>
+                  <td class="diff-line-num">\${newNum}</td>
+                  <td class="diff-line-content" data-prefix="\${prefix}">\${escapeHtml(line.content)}</td>
+                </tr>
+              \`;
+            }
+          }
+          return html;
+        }
+
+        // ===== Line Selection & Comment Form =====
+        function setupLineHoverHandlers(currentFile) {
+          const viewer = document.getElementById('diff-viewer');
+
+          viewer.onclick = (e) => {
             const btn = e.target.closest('.line-comment-btn');
             if (btn) {
-              const lineNum = btn.dataset.line;
-              const row = btn.closest('tr');
-              selectedLineNum = lineNum;
-              selectedLineElement = row;
+              selectedLineNum = btn.dataset.line;
+              selectedLineElement = btn.closest('tr');
               selectionStartLine = null;
               selectionEndLine = null;
-              showInlineCommentForm();
+              showInlineCommentForm(currentFile);
             }
-          });
+          };
 
-          viewer.addEventListener('mousedown', (e) => {
+          viewer.onmousedown = (e) => {
             const row = e.target.closest('.diff-line');
             if (!row || e.target.closest('.line-comment-btn') || e.target.closest('.inline-comment-form')) return;
-
             const lineNum = row.dataset.line;
             if (!lineNum) return;
-
             isSelecting = true;
             selectionStartLine = parseInt(lineNum);
             selectionEndLine = parseInt(lineNum);
             clearLineSelection();
             row.classList.add('line-selected');
-          });
+          };
 
-          viewer.addEventListener('mousemove', (e) => {
+          viewer.onmousemove = (e) => {
             if (!isSelecting) return;
-
             const row = e.target.closest('.diff-line');
             if (!row) return;
-
             const lineNum = row.dataset.line;
             if (!lineNum) return;
-
             selectionEndLine = parseInt(lineNum);
             updateLineSelection();
-          });
+          };
 
-          document.addEventListener('mouseup', (e) => {
+          document.onmouseup = (e) => {
             if (!isSelecting) return;
             isSelecting = false;
-
             if (selectionStartLine !== null && selectionEndLine !== null) {
               const startLine = Math.min(selectionStartLine, selectionEndLine);
               const endLine = Math.max(selectionStartLine, selectionEndLine);
-
               if (startLine !== endLine || e.target.closest('.diff-line-content')) {
                 selectedLineNum = startLine;
                 const rows = document.querySelectorAll('.diff-line');
@@ -959,10 +940,10 @@ export class SidecarPanelAdapter implements IPanelPort {
                     break;
                   }
                 }
-                showInlineCommentForm(startLine, endLine);
+                showInlineCommentForm(currentFile, startLine, endLine);
               }
             }
-          });
+          };
         }
 
         function clearLineSelection() {
@@ -974,10 +955,8 @@ export class SidecarPanelAdapter implements IPanelPort {
         function updateLineSelection() {
           clearLineSelection();
           if (selectionStartLine === null || selectionEndLine === null) return;
-
           const startLine = Math.min(selectionStartLine, selectionEndLine);
           const endLine = Math.max(selectionStartLine, selectionEndLine);
-
           const selectedRows = [];
           document.querySelectorAll('.diff-line').forEach(row => {
             const lineNum = parseInt(row.dataset.line);
@@ -986,7 +965,6 @@ export class SidecarPanelAdapter implements IPanelPort {
               selectedRows.push({ row, lineNum });
             }
           });
-
           if (selectedRows.length > 0) {
             selectedRows.sort((a, b) => a.lineNum - b.lineNum);
             selectedRows[0].row.classList.add('selection-start');
@@ -994,10 +972,9 @@ export class SidecarPanelAdapter implements IPanelPort {
           }
         }
 
-        function showInlineCommentForm(startLine, endLine) {
+        function showInlineCommentForm(currentFile, startLine, endLine) {
           const existingFormRow = document.querySelector('.comment-form-row');
           if (existingFormRow) existingFormRow.remove();
-
           if (!selectedLineElement) return;
 
           const isSingleLine = !endLine || startLine === endLine;
@@ -1007,6 +984,7 @@ export class SidecarPanelAdapter implements IPanelPort {
 
           const formRow = document.createElement('tr');
           formRow.className = 'comment-form-row';
+          formRow.dataset.currentFile = currentFile;
           formRow.innerHTML = \`
             <td colspan="4" style="padding: 0; border: none;">
               <div class="inline-comment-form active" data-start="\${startLine || selectedLineNum}" data-end="\${endLine || startLine || selectedLineNum}">
@@ -1019,7 +997,6 @@ export class SidecarPanelAdapter implements IPanelPort {
               </div>
             </td>
           \`;
-
           selectedLineElement.after(formRow);
           formRow.querySelector('textarea').focus();
         }
@@ -1033,10 +1010,12 @@ export class SidecarPanelAdapter implements IPanelPort {
         };
 
         window.submitInlineComment = function(btn) {
+          const formRow = btn.closest('.comment-form-row');
           const form = btn.closest('.inline-comment-form');
           const text = form.querySelector('textarea').value;
           const startLine = form.dataset.start;
           const endLine = form.dataset.end;
+          const currentFile = formRow.dataset.currentFile;
 
           if (text && currentFile) {
             vscode.postMessage({
@@ -1047,66 +1026,18 @@ export class SidecarPanelAdapter implements IPanelPort {
               text: text,
               context: ''
             });
-
             clearLineSelection();
-            const formRow = btn.closest('.comment-form-row');
-            if (formRow) formRow.remove();
+            formRow.remove();
             selectionStartLine = null;
             selectionEndLine = null;
           }
         };
 
-        function addComment(comment) {
-          const list = document.getElementById('comments-list');
-          if (list.querySelector('.empty-text')) {
-            list.innerHTML = '';
-          }
-
-          const lineDisplay = comment.endLine
-            ? \`\${comment.line}-\${comment.endLine}\`
-            : comment.line;
-
-          const item = document.createElement('div');
-          item.className = 'comment-item';
-          item.innerHTML = \`
-            <div class="comment-meta">\${comment.file}:\${lineDisplay}</div>
-            <div>\${comment.text}</div>
-          \`;
-          list.appendChild(item);
-        }
-
-        function updateAIType(type) {
-          const label = type === 'claude' ? 'Claude' :
-                        type === 'codex' ? 'Codex' :
-                        type === 'gemini' ? 'Gemini' : type;
-          document.getElementById('ai-type').textContent = label;
-          document.getElementById('status-badge').classList.add('active');
-        }
-
-        function removeFileFromList(filePath) {
-          const list = document.getElementById('files-list');
-          const item = Array.from(list.children).find(c => c.dataset.file === filePath);
-          if (item) {
-            item.remove();
-
-            // If removed file was selected, clear diff viewer
-            if (currentFile === filePath) {
-              currentFile = '';
-              document.querySelector('.diff-header-title').textContent = 'Select a file to review';
-              document.getElementById('diff-stats').innerHTML = '';
-              document.getElementById('diff-viewer').innerHTML = \`
-                <div class="placeholder">
-                  <div class="placeholder-icon">📝</div>
-                  <div class="placeholder-text">Select a modified file to view changes</div>
-                </div>
-              \`;
-            }
-
-            // Show empty state if no files left
-            if (list.children.length === 0) {
-              list.innerHTML = '<div class="empty-text">Waiting for changes...</div>';
-            }
-          }
+        // ===== Utility =====
+        function escapeHtml(text) {
+          const div = document.createElement('div');
+          div.textContent = text;
+          return div.innerHTML;
         }
       </script>
     </body>

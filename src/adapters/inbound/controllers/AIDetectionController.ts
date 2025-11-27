@@ -2,11 +2,13 @@ import * as vscode from 'vscode';
 import { AISession, AIType } from '../../../domain/entities/AISession';
 import { ISnapshotRepository } from '../../../application/ports/outbound/ISnapshotRepository';
 import { ICaptureSnapshotsUseCase } from '../../../application/ports/inbound/ICaptureSnapshotsUseCase';
+import { IPanelStateManager } from '../../../application/services/IPanelStateManager';
 import { VscodeTerminalGateway } from '../../outbound/gateways/VscodeTerminalGateway';
 import { SidecarPanelAdapter } from '../../outbound/presenters/SidecarPanelAdapter';
 
 export class AIDetectionController {
     private activeAISessions = new Map<string, AISession>();
+    private panelStateManager: IPanelStateManager | undefined;
 
     constructor(
         private readonly captureSnapshotsUseCase: ICaptureSnapshotsUseCase,
@@ -14,6 +16,10 @@ export class AIDetectionController {
         private readonly terminalGateway: VscodeTerminalGateway,
         private readonly getExtensionContext: () => vscode.ExtensionContext
     ) {}
+
+    setPanelStateManager(panelStateManager: IPanelStateManager): void {
+        this.panelStateManager = panelStateManager;
+    }
 
     activate(context: vscode.ExtensionContext): void {
         context.subscriptions.push(
@@ -108,8 +114,8 @@ export class AIDetectionController {
             }
         });
 
-        if (SidecarPanelAdapter.currentPanel) {
-            SidecarPanelAdapter.currentPanel.updateAIType(type);
+        if (this.panelStateManager) {
+            this.panelStateManager.setAIStatus({ active: true, type });
         }
     }
 

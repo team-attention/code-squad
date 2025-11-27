@@ -1,9 +1,109 @@
+import { DiffHunk, DiffLine, DiffResult } from '../entities/Diff';
+
 export interface DiffEntry {
     type: 'equal' | 'delete' | 'insert';
     line: string;
 }
 
 export class DiffService {
+    /**
+     * Parse unified diff string (from git) into structured format
+     */
+    parseUnifiedDiff(file: string, diffText: string): DiffResult {
+        if (!diffText || diffText.trim() === '') {
+            return { file, hunks: [], stats: { additions: 0, deletions: 0 } };
+        }
+
+        const lines = diffText.split('\n');
+        const hunks: DiffHunk[] = [];
+        let currentHunk: DiffHunk | null = null;
+        let oldLineNum = 0;
+        let newLineNum = 0;
+        let additions = 0;
+        let deletions = 0;
+
+        for (const line of lines) {
+            // Skip git diff metadata
+            if (line.startsWith('diff --git') ||
+                line.startsWith('index ') ||
+                line.startsWith('---') ||
+                line.startsWith('+++') ||
+                line.startsWith('\\')) {
+                continue;
+            }
+
+            // Hunk header
+            if (line.startsWith('@@')) {
+                if (currentHunk) {
+                    hunks.push(currentHunk);
+                }
+                const match = line.match(/@@ -(\d+),?\d* \+(\d+),?\d* @@(.*)/);
+                if (match) {
+                    oldLineNum = parseInt(match[1], 10);
+                    newLineNum = parseInt(match[2], 10);
+                    currentHunk = {
+                        header: line,
+                        oldStart: oldLineNum,
+                        newStart: newLineNum,
+                        lines: []
+                    };
+                }
+                continue;
+            }
+
+            if (!currentHunk) continue;
+
+            let diffLine: DiffLine;
+
+            if (line.startsWith('+')) {
+                diffLine = {
+                    type: 'addition',
+                    content: line.substring(1),
+                    newLineNumber: newLineNum++
+                };
+                additions++;
+            } else if (line.startsWith('-')) {
+                diffLine = {
+                    type: 'deletion',
+                    content: line.substring(1),
+                    oldLineNumber: oldLineNum++
+                };
+                deletions++;
+            } else {
+                diffLine = {
+                    type: 'context',
+                    content: line.startsWith(' ') ? line.substring(1) : line,
+                    oldLineNumber: oldLineNum++,
+                    newLineNumber: newLineNum++
+                };
+            }
+
+            currentHunk.lines.push(diffLine);
+        }
+
+        if (currentHunk) {
+            hunks.push(currentHunk);
+        }
+
+        return { file, hunks, stats: { additions, deletions } };
+    }
+
+    /**
+     * Generate structured diff from content comparison
+     */
+    generateStructuredDiff(file: string, oldContent: string, newContent: string): DiffResult {
+        const unifiedDiff = this.generateUnifiedDiff(oldContent, newContent);
+        return this.parseUnifiedDiff(file, unifiedDiff);
+    }
+
+    /**
+     * Generate structured diff for a new file
+     */
+    generateNewFileStructuredDiff(file: string, content: string): DiffResult {
+        const unifiedDiff = this.generateNewFileDiff(content);
+        return this.parseUnifiedDiff(file, unifiedDiff);
+    }
+
     generateUnifiedDiff(oldContent: string, newContent: string): string {
         if (oldContent === newContent) {
             return '';
