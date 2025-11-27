@@ -1,0 +1,34 @@
+# Source files (only compiled output needed)
+.vscode/**
+.vscode-test/**
+src/**
+**/*.ts
+!out/**/*.js
+
+# Dependencies (bundled separately)
+node_modules/**
+
+# Build artifacts
+*.vsix
+
+# Development files
+.gitignore
+.eslintrc*
+tsconfig.json
+**/*.map
+
+# Documentation (not needed in extension)
+docs/**
+.claude/**
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+**/*.test.ts
+coverage/**
+
+# Misc
+*.log
+.git/**

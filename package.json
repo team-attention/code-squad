@@ -1,0 +1,106 @@
+{
+  "name": "sidemirror",
+  "displayName": "SideMirror",
+  "description": "Real-time code review interface for AI coding assistants",
+  "version": "0.1.0",
+  "publisher": "JakePark",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/team-attention/sidemirror.git"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "ai",
+    "vibe coding",
+    "code review",
+    "claude",
+    "codex"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sidemirror.showPanel",
+        "title": "SideMirror: Show Panel"
+      },
+      {
+        "command": "sidemirror.submitComments",
+        "title": "SideMirror: Submit Comments to AI"
+      },
+      {
+        "command": "sidemirror.addComment",
+        "title": "SideMirror: Add Comment"
+      },
+      {
+        "command": "sidemirror.addToWhitelist",
+        "title": "SideMirror: Add File/Pattern to Whitelist"
+      },
+      {
+        "command": "sidemirror.manageWhitelist",
+        "title": "SideMirror: Manage Whitelist"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "sidemirror.addComment",
+          "group": "sidemirror",
+          "when": "editorTextFocus"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "SideMirror",
+      "properties": {
+        "sidemirror.autoDetect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically detect Claude Code and Codex execution"
+        },
+        "sidemirror.autoShowPanel": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically show SideMirror panel when AI is detected"
+        },
+        "sidemirror.includeFiles": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Glob patterns for files to track even if they are gitignored (e.g., ['dist/**', '.env.local'])"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "dependencies": {
+    "fast-glob": "^3.3.3",
+    "ignore": "^5.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "20.x",
+    "@types/vscode": "^1.93.0",
+    "@typescript-eslint/eslint-plugin": "^7.14.1",
+    "@typescript-eslint/parser": "^7.11.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.5"
+  }
+}
