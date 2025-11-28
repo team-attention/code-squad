@@ -142,7 +142,6 @@ export class AIDetectionController {
 
         try {
             await vscode.commands.executeCommand('workbench.action.terminal.moveIntoEditor');
-            await vscode.commands.executeCommand('workbench.action.moveEditorToRightGroup');
         } catch {
             console.log('Terminal move command not available, continuing with default layout');
         }
