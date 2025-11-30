@@ -4,6 +4,9 @@ import * as path from 'path';
 import ignore, { Ignore } from 'ignore';
 import { IPanelStateManager } from '../../../application/services/IPanelStateManager';
 import { IGenerateDiffUseCase } from '../../../application/ports/inbound/IGenerateDiffUseCase';
+import { IGitPort } from '../../../application/ports/outbound/IGitPort';
+import { DiffDisplayState, ChunkDisplayInfo } from '../../../application/ports/outbound/PanelState';
+import { DiffResult } from '../../../domain/entities/Diff';
 
 export class FileWatchController {
     private gitignore: Ignore;
@@ -11,6 +14,7 @@ export class FileWatchController {
     private workspaceRoot: string | undefined;
     private panelStateManager: IPanelStateManager | undefined;
     private generateDiffUseCase: IGenerateDiffUseCase | undefined;
+    private gitPort: IGitPort | undefined;
 
     constructor() {
         this.gitignore = ignore();
@@ -24,6 +28,10 @@ export class FileWatchController {
 
     setGenerateDiffUseCase(generateDiffUseCase: IGenerateDiffUseCase): void {
         this.generateDiffUseCase = generateDiffUseCase;
+    }
+
+    setGitPort(gitPort: IGitPort): void {
+        this.gitPort = gitPort;
     }
 
     private initialize(): void {
@@ -104,6 +112,11 @@ export class FileWatchController {
                 const fileName = path.basename(relativePath);
                 const currentState = this.panelStateManager.getState();
 
+                let status: 'added' | 'modified' | 'deleted' = 'modified';
+                if (this.gitPort && this.workspaceRoot) {
+                    status = await this.gitPort.getFileStatus(this.workspaceRoot, relativePath);
+                }
+
                 if (this.panelStateManager.isInBaseline(relativePath)) {
                     this.panelStateManager.moveToSession(relativePath);
                 } else {
@@ -114,7 +127,7 @@ export class FileWatchController {
                         this.panelStateManager.addSessionFile({
                             path: relativePath,
                             name: fileName,
-                            status: 'modified',
+                            status,
                         });
                     }
                 }
@@ -127,7 +140,8 @@ export class FileWatchController {
                 if (this.generateDiffUseCase && (isFirstFile || isSelectedFile)) {
                     const diffResult = await this.generateDiffUseCase.execute(relativePath);
                     if (diffResult) {
-                        this.panelStateManager.showDiff(diffResult);
+                        const displayState = this.createDiffDisplayState(diffResult);
+                        this.panelStateManager.showDiff(displayState);
                     }
                 }
             }
@@ -144,5 +158,19 @@ export class FileWatchController {
         context.subscriptions.push(fileWatcher);
         context.subscriptions.push(fileWatcher.onDidChange(handleFileChange));
         context.subscriptions.push(fileWatcher.onDidCreate(handleFileChange));
+    }
+
+    private createDiffDisplayState(diff: DiffResult): DiffDisplayState {
+        const chunkStates: ChunkDisplayInfo[] = diff.chunks.map((chunk, index) => ({
+            index,
+            isCollapsed: false,
+            scopeLabel: null,
+        }));
+
+        return {
+            ...diff,
+            chunkStates,
+            scopes: [],
+        };
     }
 }

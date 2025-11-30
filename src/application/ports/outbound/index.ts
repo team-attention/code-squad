@@ -5,3 +5,4 @@ export { IFileSystemPort } from './IFileSystemPort';
 export { IGitPort } from './IGitPort';
 export { INotificationPort } from './INotificationPort';
 export { IFileGlobber } from './IFileGlobber';
+export { ISymbolPort, ScopeInfo } from './ISymbolPort';

@@ -1,8 +1,11 @@
 import * as vscode from 'vscode';
-import { PanelState } from '../../../application/ports/outbound/PanelState';
+import * as path from 'path';
+import { PanelState, DiffDisplayState, ChunkDisplayInfo } from '../../../application/ports/outbound/PanelState';
 import { IGenerateDiffUseCase } from '../../../application/ports/inbound/IGenerateDiffUseCase';
 import { IAddCommentUseCase } from '../../../application/ports/inbound/IAddCommentUseCase';
 import { IPanelStateManager } from '../../../application/services/IPanelStateManager';
+import { ISymbolPort, ScopeInfo } from '../../../application/ports/outbound/ISymbolPort';
+import { DiffResult, DiffChunk } from '../../../domain/entities/Diff';
 
 /**
  * Webview Panel Adapter (Inbound Adapter)
@@ -22,6 +25,7 @@ export class SidecarPanelAdapter {
     private addCommentUseCase: IAddCommentUseCase | undefined;
     private onSubmitComments: (() => Promise<void>) | undefined;
     private panelStateManager: IPanelStateManager | undefined;
+    private symbolPort: ISymbolPort | undefined;
 
     public static create(context: vscode.ExtensionContext): SidecarPanelAdapter {
         if (SidecarPanelAdapter.currentPanel) {
@@ -68,6 +72,32 @@ export class SidecarPanelAdapter {
                     case 'toggleUncommitted':
                         this.panelStateManager?.toggleShowUncommitted();
                         break;
+                    case 'toggleChunkCollapse':
+                        this.panelStateManager?.toggleChunkCollapse(message.index);
+                        break;
+                    case 'toggleAllChunks':
+                        if (this.panelStateManager) {
+                            const state = this.panelStateManager.getState();
+                            const allCollapsed = state.diff?.chunkStates?.every(s => s.isCollapsed) ?? false;
+                            if (allCollapsed) {
+                                this.panelStateManager.expandAllChunks();
+                            } else {
+                                this.panelStateManager.collapseAllChunks();
+                            }
+                        }
+                        break;
+                    case 'toggleViewMode':
+                        if (this.panelStateManager) {
+                            const current = this.panelStateManager.getState().isTreeView;
+                            this.panelStateManager.setTreeView(!current);
+                        }
+                        break;
+                    case 'toggleDiffViewMode':
+                        if (this.panelStateManager) {
+                            const current = this.panelStateManager.getState().diffViewMode;
+                            this.panelStateManager.setDiffViewMode(current === 'preview' ? 'diff' : 'preview');
+                        }
+                        break;
                 }
             },
             null,
@@ -82,12 +112,14 @@ export class SidecarPanelAdapter {
         generateDiffUseCase: IGenerateDiffUseCase,
         addCommentUseCase: IAddCommentUseCase,
         onSubmitComments: () => Promise<void>,
-        panelStateManager?: IPanelStateManager
+        panelStateManager?: IPanelStateManager,
+        symbolPort?: ISymbolPort
     ): void {
         this.generateDiffUseCase = generateDiffUseCase;
         this.addCommentUseCase = addCommentUseCase;
         this.onSubmitComments = onSubmitComments;
         this.panelStateManager = panelStateManager;
+        this.symbolPort = symbolPort;
     }
 
     /**
@@ -105,12 +137,93 @@ export class SidecarPanelAdapter {
         const diffResult = await this.generateDiffUseCase.execute(file);
 
         if (diffResult === null) {
-            // No diff - remove from session files
             this.panelStateManager.removeSessionFile(file);
         } else {
-            // Show diff
-            this.panelStateManager.showDiff(diffResult);
+            const scopes = await this.prefetchScopes(file, diffResult);
+            const displayState = this.createDiffDisplayState(diffResult, scopes);
+            this.panelStateManager.showDiff(displayState);
         }
+    }
+
+    private async prefetchScopes(file: string, diff: DiffResult): Promise<ScopeInfo[]> {
+        if (!this.symbolPort) return [];
+
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!workspaceRoot) return [];
+
+        const absolutePath = path.join(workspaceRoot, file);
+
+        let minLine = Infinity;
+        let maxLine = 0;
+        for (const chunk of diff.chunks) {
+            minLine = Math.min(minLine, chunk.newStart);
+            maxLine = Math.max(maxLine, chunk.newStart + chunk.lines.length);
+        }
+
+        if (minLine === Infinity) return [];
+
+        return this.symbolPort.getScopesForRange(absolutePath, minLine, maxLine);
+    }
+
+    private createDiffDisplayState(diff: DiffResult, scopes: ScopeInfo[]): DiffDisplayState {
+        const chunkStates: ChunkDisplayInfo[] = diff.chunks.map((chunk, index) => {
+            const scopeLabel = this.findScopeLabel(chunk, scopes);
+            return {
+                index,
+                isCollapsed: false,
+                scopeLabel
+            };
+        });
+
+        return {
+            ...diff,
+            chunkStates,
+            scopes
+        };
+    }
+
+    private findScopeLabel(chunk: DiffChunk, scopes: ScopeInfo[]): string | null {
+        // Check if this is a new file (oldStart is 0)
+        if (chunk.oldStart === 0) {
+            return 'New file';
+        }
+
+        const chunkStart = chunk.newStart;
+        const chunkEnd = chunk.newStart + chunk.lines.length;
+
+        // Find all scopes that intersect with this chunk
+        const intersectingScopes: ScopeInfo[] = [];
+        for (const scope of scopes) {
+            // Check if scope intersects with chunk
+            if (scope.startLine <= chunkEnd && scope.endLine >= chunkStart) {
+                intersectingScopes.push(scope);
+            }
+        }
+
+        if (intersectingScopes.length === 0) {
+            return 'root';
+        }
+
+        // Filter to get the most specific (smallest) scopes
+        // Remove scopes that contain other intersecting scopes
+        const specificScopes = intersectingScopes.filter(scope => {
+            return !intersectingScopes.some(other =>
+                other !== scope &&
+                other.startLine >= scope.startLine &&
+                other.endLine <= scope.endLine
+            );
+        });
+
+        // Format scope names
+        const scopeNames = specificScopes.map(scope => {
+            const prefix = scope.containerName ? `${scope.containerName}.` : '';
+            const suffix = scope.kind === 'method' || scope.kind === 'function' ? '()' : '';
+            return `${prefix}${scope.name}${suffix}`;
+        });
+
+        // Remove duplicates and join
+        const uniqueNames = [...new Set(scopeNames)];
+        return uniqueNames.join(', ');
     }
 
     private async handleAddComment(message: {
@@ -372,9 +485,192 @@ export class SidecarPanelAdapter {
           font-size: 10px;
           padding: 1px 6px;
           border-radius: 10px;
+          font-weight: 600;
+          text-transform: uppercase;
+        }
+
+        .file-badge.added {
           background: var(--vscode-gitDecoration-addedResourceForeground, #238636);
-          color: var(--vscode-editor-background);
-          font-weight: 500;
+          color: var(--vscode-editor-background, white);
+        }
+
+        .file-badge.modified {
+          background: var(--vscode-gitDecoration-modifiedResourceForeground, #d29922);
+          color: var(--vscode-editor-background, black);
+        }
+
+        .file-badge.deleted {
+          background: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+          color: var(--vscode-editor-background, white);
+        }
+
+        .file-tree {
+          font-size: 12px;
+        }
+
+        .tree-node {
+          user-select: none;
+        }
+
+        .tree-folder {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 4px 0;
+          cursor: pointer;
+        }
+
+        .tree-folder:hover {
+          background: var(--vscode-list-hoverBackground);
+          border-radius: 4px;
+        }
+
+        .tree-toggle {
+          width: 16px;
+          text-align: center;
+          font-size: 10px;
+          transition: transform 0.15s;
+        }
+
+        .tree-toggle.collapsed {
+          transform: rotate(-90deg);
+        }
+
+        .tree-folder-name {
+          color: var(--vscode-foreground);
+        }
+
+        .tree-folder-count {
+          color: var(--vscode-descriptionForeground);
+          font-size: 10px;
+          margin-left: 4px;
+        }
+
+        .tree-children {
+          margin-left: 16px;
+          overflow: hidden;
+        }
+
+        .tree-children.collapsed {
+          display: none;
+        }
+
+        .tree-file {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 4px 8px;
+          margin: 2px 0;
+          border-radius: 4px;
+          cursor: pointer;
+        }
+
+        .tree-file:hover {
+          background: var(--vscode-list-hoverBackground);
+        }
+
+        .tree-file.selected {
+          background: var(--vscode-list-activeSelectionBackground);
+          color: var(--vscode-list-activeSelectionForeground);
+        }
+
+        .toggle-btn {
+          width: auto;
+          padding: 2px 8px;
+          font-size: 10px;
+          background: var(--vscode-button-secondaryBackground);
+          color: var(--vscode-button-secondaryForeground);
+          border-radius: 4px;
+          cursor: pointer;
+        }
+
+        .toggle-btn:hover {
+          background: var(--vscode-button-hoverBackground);
+        }
+
+        .view-toggle {
+          margin-bottom: 8px;
+        }
+
+        .view-mode-toggle {
+          margin-left: auto;
+        }
+
+        .markdown-preview {
+          padding: 24px;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+          font-size: 14px;
+          line-height: 1.6;
+          color: var(--vscode-foreground);
+          overflow: auto;
+          height: 100%;
+        }
+
+        .markdown-preview h1 {
+          font-size: 24px;
+          font-weight: 600;
+          margin: 0 0 16px 0;
+          padding-bottom: 8px;
+          border-bottom: 1px solid var(--vscode-panel-border);
+        }
+
+        .markdown-preview h2 {
+          font-size: 20px;
+          font-weight: 600;
+          margin: 24px 0 12px 0;
+        }
+
+        .markdown-preview h3 {
+          font-size: 16px;
+          font-weight: 600;
+          margin: 20px 0 8px 0;
+        }
+
+        .markdown-preview p {
+          margin: 0 0 12px 0;
+        }
+
+        .markdown-preview ul, .markdown-preview ol {
+          margin: 0 0 12px 0;
+          padding-left: 24px;
+        }
+
+        .markdown-preview li {
+          margin: 4px 0;
+        }
+
+        .markdown-preview code {
+          font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+          font-size: 13px;
+          background: var(--vscode-textCodeBlock-background);
+          padding: 2px 6px;
+          border-radius: 4px;
+        }
+
+        .markdown-preview pre {
+          background: var(--vscode-textCodeBlock-background);
+          padding: 12px 16px;
+          border-radius: 6px;
+          overflow-x: auto;
+          margin: 0 0 12px 0;
+        }
+
+        .markdown-preview pre code {
+          background: none;
+          padding: 0;
+        }
+
+        .markdown-preview a {
+          color: var(--vscode-textLink-foreground);
+          text-decoration: none;
+        }
+
+        .markdown-preview a:hover {
+          text-decoration: underline;
+        }
+
+        .markdown-preview strong {
+          font-weight: 600;
         }
 
         .comment-item {
@@ -510,17 +806,75 @@ export class SidecarPanelAdapter {
         .diff-table {
           width: 100%;
           border-collapse: collapse;
+          table-layout: fixed;
           font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
           font-size: 12px;
           line-height: 20px;
         }
 
-        .diff-hunk-header {
+        .col-line-num {
+          width: 40px;
+        }
+
+        .col-content {
+          width: auto;
+        }
+
+        .chunk-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 8px;
           background: var(--vscode-diffEditor-unchangedRegionBackground, rgba(56, 139, 253, 0.15));
-          color: var(--vscode-descriptionForeground);
-          padding: 8px 16px;
-          font-size: 12px;
           border-top: 1px solid var(--vscode-panel-border);
+          border-bottom: 1px solid var(--vscode-panel-border);
+          cursor: pointer;
+          user-select: none;
+          flex-wrap: nowrap;
+          white-space: nowrap;
+        }
+
+        .chunk-header:hover {
+          background: var(--vscode-list-hoverBackground);
+        }
+
+        .chunk-toggle {
+          font-size: 10px;
+          flex-shrink: 0;
+        }
+
+        .chunk-scope {
+          font-family: monospace;
+          font-size: 12px;
+          color: var(--vscode-textLink-foreground);
+          flex-shrink: 0;
+        }
+
+        .chunk-stats {
+          margin-left: auto;
+          font-size: 11px;
+          font-weight: 500;
+          flex-shrink: 0;
+        }
+
+        .chunk-stats .added {
+          color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+        }
+
+        .chunk-stats .removed {
+          color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+        }
+
+        .chunk-lines {
+          display: table-row-group;
+        }
+
+        .chunk-lines.collapsed {
+          display: none;
+        }
+
+        .chunk-collapse-all {
+          padding: 4px 8px;
           border-bottom: 1px solid var(--vscode-panel-border);
         }
 
@@ -533,21 +887,19 @@ export class SidecarPanelAdapter {
         }
 
         .diff-line-num {
-          width: 50px;
-          min-width: 50px;
-          padding: 0 8px;
+          width: 4ch;
+          padding: 0 4px;
           text-align: right;
           color: var(--vscode-editorLineNumber-foreground);
-          background: var(--vscode-editorGutter-background);
           user-select: none;
           vertical-align: top;
-          border-right: 1px solid var(--vscode-panel-border);
         }
 
         .diff-line-content {
-          padding: 0 16px;
+          padding: 0 8px;
           white-space: pre-wrap;
           word-break: break-all;
+          width: 100%;
         }
 
         .diff-line-content::before {
@@ -612,42 +964,6 @@ export class SidecarPanelAdapter {
           background: transparent !important;
         }
 
-        .comment-btn-cell {
-          width: 24px;
-          min-width: 24px;
-          padding: 0;
-          vertical-align: middle;
-          background: var(--vscode-editorGutter-background);
-          border-right: 1px solid var(--vscode-panel-border);
-        }
-
-        .line-comment-btn {
-          display: none;
-          width: 20px;
-          height: 20px;
-          margin: 0 2px;
-          padding: 0;
-          border: none;
-          border-radius: 4px;
-          background: var(--vscode-button-background);
-          color: var(--vscode-button-foreground);
-          font-size: 14px;
-          line-height: 20px;
-          text-align: center;
-          cursor: pointer;
-        }
-
-        .line-comment-btn:hover {
-          background: var(--vscode-button-hoverBackground);
-        }
-
-        .diff-line:hover .line-comment-btn {
-          display: inline-block;
-        }
-
-        .add-comment-btn {
-          display: none !important;
-        }
 
         .inline-comment-form {
           display: none;
@@ -938,14 +1254,14 @@ export class SidecarPanelAdapter {
          * Main render function - renders entire UI from state
          */
         function renderState(state) {
-          renderFileList(state.sessionFiles, state.uncommittedFiles, state.showUncommitted, state.selectedFile);
+          renderFileList(state.sessionFiles, state.uncommittedFiles, state.showUncommitted, state.selectedFile, state.isTreeView);
           renderComments(state.comments);
           renderAIStatus(state.aiStatus);
-          renderDiff(state.diff, state.selectedFile);
+          renderDiff(state.diff, state.selectedFile, state.diffViewMode);
         }
 
         // ===== File List Rendering =====
-        function renderFileList(sessionFiles, uncommittedFiles, showUncommitted, selectedFile) {
+        function renderFileList(sessionFiles, uncommittedFiles, showUncommitted, selectedFile, isTreeView) {
           const list = document.getElementById('files-list');
           const toggleRow = document.getElementById('toggle-row');
           const toggleSwitch = document.getElementById('uncommitted-toggle');
@@ -972,26 +1288,205 @@ export class SidecarPanelAdapter {
             return;
           }
 
-          list.innerHTML = allFiles.map(file => {
-            const isSelected = file.path === selectedFile;
-            const statusBadge = file.status === 'added' ? 'A' : file.status === 'deleted' ? 'D' : 'M';
-            const uncommittedClass = file.isUncommitted ? 'uncommitted' : '';
+          // View toggle button (single toggle)
+          let html = \`
+            <div class="view-toggle">
+              <button class="toggle-btn" onclick="toggleViewMode()">\${isTreeView ? 'List' : 'Tree'}</button>
+            </div>
+          \`;
+
+          if (isTreeView) {
+            const tree = buildFileTree(allFiles);
+            html += '<div class="file-tree">';
+            html += renderTreeNode(tree, selectedFile, 0);
+            html += '</div>';
+          } else {
+            html += allFiles.map(file => {
+              const isSelected = file.path === selectedFile;
+
+              let badgeText = 'M';
+              let badgeClass = 'modified';
+              if (file.status === 'added') {
+                badgeText = 'A';
+                badgeClass = 'added';
+              } else if (file.status === 'deleted') {
+                badgeText = 'D';
+                badgeClass = 'deleted';
+              }
+
+              const uncommittedClass = file.isUncommitted ? 'uncommitted' : '';
+              return \`
+                <div class="file-item \${isSelected ? 'selected' : ''} \${uncommittedClass}" data-file="\${file.path}">
+                  <span class="file-icon">📄</span>
+                  <span class="file-name" title="\${file.path}">\${file.name}</span>
+                  <span class="file-badge \${badgeClass}">\${badgeText}</span>
+                </div>
+              \`;
+            }).join('');
+          }
+
+          list.innerHTML = html;
+
+          // Add click handlers
+          if (isTreeView) {
+            setupTreeHandlers();
+          } else {
+            list.querySelectorAll('.file-item').forEach(item => {
+              item.onclick = () => {
+                vscode.postMessage({ type: 'selectFile', file: item.dataset.file });
+              };
+            });
+          }
+        }
+
+        // ===== Tree View Functions =====
+        function buildFileTree(files) {
+          const root = {
+            name: '',
+            path: '',
+            type: 'folder',
+            children: [],
+            isExpanded: true
+          };
+
+          for (const file of files) {
+            const parts = file.path.split('/');
+            let current = root;
+
+            for (let i = 0; i < parts.length; i++) {
+              const part = parts[i];
+              const isFile = i === parts.length - 1;
+              const currentPath = parts.slice(0, i + 1).join('/');
+
+              if (isFile) {
+                current.children.push({
+                  name: part,
+                  path: file.path,
+                  type: 'file',
+                  status: file.status,
+                  isUncommitted: file.isUncommitted
+                });
+              } else {
+                let folder = current.children.find(
+                  c => c.type === 'folder' && c.name === part
+                );
+                if (!folder) {
+                  folder = {
+                    name: part,
+                    path: currentPath,
+                    type: 'folder',
+                    children: [],
+                    isExpanded: true
+                  };
+                  current.children.push(folder);
+                }
+                current = folder;
+              }
+            }
+          }
+
+          sortTreeNode(root);
+          return root;
+        }
+
+        function sortTreeNode(node) {
+          if (!node.children) return;
+
+          node.children.sort((a, b) => {
+            if (a.type !== b.type) {
+              return a.type === 'folder' ? -1 : 1;
+            }
+            return a.name.localeCompare(b.name);
+          });
+
+          for (const child of node.children) {
+            if (child.type === 'folder') {
+              sortTreeNode(child);
+            }
+          }
+        }
+
+        function renderTreeNode(node, selectedFile, depth) {
+          if (node.type === 'file') {
+            const isSelected = node.path === selectedFile;
+            let badgeClass = 'modified';
+            let badgeText = 'M';
+            if (node.status === 'added') {
+              badgeClass = 'added';
+              badgeText = 'A';
+            } else if (node.status === 'deleted') {
+              badgeClass = 'deleted';
+              badgeText = 'D';
+            }
+            const uncommittedClass = node.isUncommitted ? 'uncommitted' : '';
+
             return \`
-              <div class="file-item \${isSelected ? 'selected' : ''} \${uncommittedClass}" data-file="\${file.path}">
+              <div class="tree-file \${isSelected ? 'selected' : ''} \${uncommittedClass}"
+                   data-file="\${node.path}">
                 <span class="file-icon">📄</span>
-                <span class="file-name" title="\${file.path}">\${file.name}</span>
-                <span class="file-badge">\${statusBadge}</span>
+                <span class="file-name">\${escapeHtml(node.name)}</span>
+                <span class="file-badge \${badgeClass}">\${badgeText}</span>
               </div>
             \`;
-          }).join('');
+          }
 
-          // Add click handlers for file items
-          list.querySelectorAll('.file-item').forEach(item => {
-            item.onclick = () => {
-              vscode.postMessage({ type: 'selectFile', file: item.dataset.file });
+          // Folder
+          if (!node.children || node.children.length === 0) return '';
+
+          // Skip root node rendering
+          if (depth === 0) {
+            return node.children.map(child => renderTreeNode(child, selectedFile, depth + 1)).join('');
+          }
+
+          const fileCount = countFiles(node);
+          const isExpanded = node.isExpanded !== false;
+          const toggleClass = isExpanded ? '' : 'collapsed';
+          const childrenClass = isExpanded ? '' : 'collapsed';
+
+          return \`
+            <div class="tree-node" data-path="\${node.path}">
+              <div class="tree-folder" data-folder="\${node.path}">
+                <span class="tree-toggle \${toggleClass}">▼</span>
+                <span class="file-icon">📁</span>
+                <span class="tree-folder-name">\${escapeHtml(node.name)}/</span>
+                <span class="tree-folder-count">(\${fileCount})</span>
+              </div>
+              <div class="tree-children \${childrenClass}">
+                \${node.children.map(child => renderTreeNode(child, selectedFile, depth + 1)).join('')}
+              </div>
+            </div>
+          \`;
+        }
+
+        function countFiles(node) {
+          if (node.type === 'file') return 1;
+          if (!node.children) return 0;
+          return node.children.reduce((sum, child) => sum + countFiles(child), 0);
+        }
+
+        function setupTreeHandlers() {
+          // Folder toggle
+          document.querySelectorAll('.tree-folder').forEach(folder => {
+            folder.onclick = (e) => {
+              e.stopPropagation();
+              const toggle = folder.querySelector('.tree-toggle');
+              const children = folder.nextElementSibling;
+              toggle.classList.toggle('collapsed');
+              children.classList.toggle('collapsed');
+            };
+          });
+
+          // File select
+          document.querySelectorAll('.tree-file').forEach(file => {
+            file.onclick = () => {
+              vscode.postMessage({ type: 'selectFile', file: file.dataset.file });
             };
           });
         }
+
+        window.toggleViewMode = function() {
+          vscode.postMessage({ type: 'toggleViewMode' });
+        };
 
         // ===== Comments Rendering =====
         function renderComments(comments) {
@@ -1057,12 +1552,12 @@ export class SidecarPanelAdapter {
         }
 
         // ===== Diff Rendering =====
-        function renderDiff(diff, selectedFile) {
+        function renderDiff(diff, selectedFile, viewMode) {
           const header = document.querySelector('.diff-header-title');
           const stats = document.getElementById('diff-stats');
           const viewer = document.getElementById('diff-viewer');
 
-          if (!diff || !diff.hunks || diff.hunks.length === 0) {
+          if (!diff || !diff.chunks || diff.chunks.length === 0) {
             header.textContent = selectedFile || 'Select a file to review';
             stats.innerHTML = '';
             viewer.innerHTML = \`
@@ -1075,38 +1570,211 @@ export class SidecarPanelAdapter {
           }
 
           header.textContent = diff.file;
-          stats.innerHTML = \`
-            <span class="stat-added">+\${diff.stats.additions}</span>
-            <span class="stat-removed">-\${diff.stats.deletions}</span>
-          \`;
 
-          viewer.innerHTML = '<table class="diff-table">' + renderHunksToHtml(diff.hunks) + '</table>';
+          // Check if markdown file
+          const isMarkdown = selectedFile && (
+            selectedFile.endsWith('.md') ||
+            selectedFile.endsWith('.markdown') ||
+            selectedFile.endsWith('.mdx')
+          );
+
+          // Add view mode toggle for markdown files (single toggle, default preview)
+          if (isMarkdown) {
+            stats.innerHTML = \`
+              <span class="stat-added">+\${diff.stats.additions}</span>
+              <span class="stat-removed">-\${diff.stats.deletions}</span>
+              <div class="view-mode-toggle">
+                <button class="toggle-btn" onclick="toggleDiffViewMode()">\${viewMode === 'preview' ? 'Diff' : 'Preview'}</button>
+              </div>
+            \`;
+
+            if (viewMode === 'preview') {
+              renderMarkdownPreview(diff, viewer);
+              return;
+            }
+          } else {
+            stats.innerHTML = \`
+              <span class="stat-added">+\${diff.stats.additions}</span>
+              <span class="stat-removed">-\${diff.stats.deletions}</span>
+            \`;
+          }
+
+          // Check if all chunks are collapsed
+          const chunkStates = diff.chunkStates || [];
+          const allCollapsed = chunkStates.length > 0 && chunkStates.every(s => s.isCollapsed);
+
+          let html = \`
+            <div class="chunk-collapse-all">
+              <button class="toggle-btn" onclick="toggleAllChunks()">\${allCollapsed ? 'Expand' : 'Collapse'}</button>
+            </div>
+            <table class="diff-table">
+              <colgroup>
+                <col class="col-line-num">
+                <col class="col-content">
+              </colgroup>
+          \`;
+          html += renderChunksToHtml(diff.chunks, chunkStates);
+          html += '</table>';
+
+          viewer.innerHTML = html;
           setupLineHoverHandlers(diff.file);
+          setupChunkToggleHandlers();
         }
 
-        function renderHunksToHtml(hunks) {
+        // ===== Markdown Rendering =====
+        function renderMarkdown(text) {
+          const bt = String.fromCharCode(96); // backtick character
+
+          // Store code blocks first to protect them from processing
+          const codeBlocks = [];
+          const codeBlockRegex = new RegExp(bt + bt + bt + '(\\\\w*)\\\\n([\\\\s\\\\S]*?)' + bt + bt + bt, 'g');
+          let html = text.replace(codeBlockRegex, (match, lang, code) => {
+            const index = codeBlocks.length;
+            codeBlocks.push('<pre><code class="language-' + (lang || '') + '">' + escapeHtml(code) + '</code></pre>');
+            return '{{CODE_BLOCK_' + index + '}}';
+          });
+
+          // Store inline code
+          const inlineCode = [];
+          const inlineCodeRegex = new RegExp(bt + '([^' + bt + ']+)' + bt, 'g');
+          html = html.replace(inlineCodeRegex, (match, code) => {
+            const index = inlineCode.length;
+            inlineCode.push('<code>' + escapeHtml(code) + '</code>');
+            return '{{INLINE_CODE_' + index + '}}';
+          });
+
+          // Now escape the rest
+          html = escapeHtml(html);
+
+          // Restore code blocks and inline code
+          codeBlocks.forEach((block, i) => {
+            html = html.replace('{{CODE_BLOCK_' + i + '}}', block);
+          });
+          inlineCode.forEach((code, i) => {
+            html = html.replace('{{INLINE_CODE_' + i + '}}', code);
+          });
+
+          // Headers
+          html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+          html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+          html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+          // Bold and italic
+          html = html.replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>');
+          html = html.replace(/\\*(.+?)\\*/g, '<em>$1</em>');
+          html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+          html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+
+          // Lists
+          html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+          html = html.replace(/^\\* (.+)$/gm, '<li>$1</li>');
+          html = html.replace(/^\\d+\\. (.+)$/gm, '<li>$1</li>');
+
+          // Wrap consecutive <li> in <ul>
+          html = html.replace(/(<li>.*<\\/li>\\n?)+/g, '<ul>$&</ul>');
+
+          // Links
+          html = html.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2">$1</a>');
+
+          // Line breaks to paragraphs
+          html = html.split(/\\n\\n+/).map(p => p.trim() ? '<p>' + p.replace(/\\n/g, '<br>') + '</p>' : '').join('');
+
+          // Clean up paragraphs around block elements
+          html = html.replace(/<p>(<h[1-6]>)/g, '$1');
+          html = html.replace(/(<\\/h[1-6]>)<\\/p>/g, '$1');
+          html = html.replace(/<p>(<ul>)/g, '$1');
+          html = html.replace(/(<\\/ul>)<\\/p>/g, '$1');
+          html = html.replace(/<p>(<pre>)/g, '$1');
+          html = html.replace(/(<\\/pre>)<\\/p>/g, '$1');
+          html = html.replace(/<p><\\/p>/g, '');
+          html = html.replace(/<p><br><\\/p>/g, '');
+
+          return html;
+        }
+
+        function renderMarkdownPreview(diff, container) {
+          // Extract new content from diff (additions and context lines)
+          let content = '';
+          for (const chunk of diff.chunks) {
+            for (const line of chunk.lines) {
+              if (line.type === 'addition' || line.type === 'context') {
+                content += line.content + '\\n';
+              }
+            }
+          }
+
+          // Render markdown
+          const rendered = renderMarkdown(content);
+
+          container.innerHTML = '<div class="markdown-preview">' + rendered + '</div>';
+        }
+
+        window.toggleDiffViewMode = function() {
+          vscode.postMessage({ type: 'toggleDiffViewMode' });
+        };
+
+        function renderChunksToHtml(chunks, chunkStates) {
           let html = '';
-          for (const hunk of hunks) {
-            html += \`<tr><td colspan="4" class="diff-hunk-header">\${escapeHtml(hunk.header)}</td></tr>\`;
-            for (const line of hunk.lines) {
+          for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            const state = chunkStates[i] || { isCollapsed: false, scopeLabel: null };
+            // Determine scope label with fallback
+            let scopeLabel = state.scopeLabel;
+            if (!scopeLabel) {
+              if (chunk.oldStart === 0) {
+                scopeLabel = 'New file';
+              } else {
+                scopeLabel = \`Lines \${chunk.oldStart}-\${chunk.oldStart + chunk.lines.length}\`;
+              }
+            }
+
+            // Chunk header (clickable) - stays same regardless of collapse state
+            html += \`
+              <tr class="chunk-header-row" data-chunk-index="\${i}">
+                <td colspan="2" class="chunk-header">
+                  <span class="chunk-toggle">▼</span>
+                  <span class="chunk-scope">\${escapeHtml(scopeLabel)}</span>
+                  <span class="chunk-stats">
+                    <span class="added">+\${chunk.stats?.additions || 0}</span>
+                    <span class="removed">-\${chunk.stats?.deletions || 0}</span>
+                  </span>
+                </td>
+              </tr>
+            \`;
+
+            // Chunk lines (collapsible) - just show/hide
+            const linesClass = state.isCollapsed ? 'collapsed' : '';
+            html += \`<tbody class="chunk-lines \${linesClass}" data-chunk-index="\${i}">\`;
+
+            for (const line of chunk.lines) {
               const lineClass = line.type;
               const prefix = line.type === 'addition' ? '+' : line.type === 'deletion' ? '-' : ' ';
-              const oldNum = line.oldLineNumber || '';
-              const newNum = line.newLineNumber || '';
-              const displayLineNum = newNum || oldNum || '';
-              const showCommentBtn = line.type === 'addition' || line.type === 'deletion';
+              const lineNum = line.newLineNumber || line.oldLineNumber || '';
               html += \`
-                <tr class="diff-line \${lineClass}" data-line="\${displayLineNum}">
-                  <td class="comment-btn-cell">\${showCommentBtn ? \`<button class="line-comment-btn" data-line="\${displayLineNum}">+</button>\` : ''}</td>
-                  <td class="diff-line-num">\${oldNum}</td>
-                  <td class="diff-line-num">\${newNum}</td>
+                <tr class="diff-line \${lineClass}" data-line="\${lineNum}">
+                  <td class="diff-line-num">\${lineNum}</td>
                   <td class="diff-line-content" data-prefix="\${prefix}">\${escapeHtml(line.content)}</td>
                 </tr>
               \`;
             }
+
+            html += '</tbody>';
           }
           return html;
         }
+
+        function setupChunkToggleHandlers() {
+          document.querySelectorAll('.chunk-header-row').forEach(row => {
+            row.onclick = () => {
+              const index = parseInt(row.dataset.chunkIndex);
+              vscode.postMessage({ type: 'toggleChunkCollapse', index });
+            };
+          });
+        }
+
+        window.toggleAllChunks = function() {
+          vscode.postMessage({ type: 'toggleAllChunks' });
+        };
 
         // ===== Line Selection & Comment Form =====
         function setupLineHoverHandlers(currentFile) {

@@ -1,5 +1,5 @@
 import { exec } from 'child_process';
-import { IGitPort } from '../../../application/ports/outbound/IGitPort';
+import { IGitPort, FileStatus } from '../../../application/ports/outbound/IGitPort';
 
 export class VscodeGitGateway implements IGitPort {
     async isGitRepository(workspaceRoot: string): Promise<boolean> {
@@ -89,6 +89,100 @@ export class VscodeGitGateway implements IGitPort {
                         .map((line) => line.substring(3).trim())
                         .filter((file) => file.length > 0);
 
+                    resolve(files);
+                }
+            );
+        });
+    }
+
+    async getFileStatus(workspaceRoot: string, relativePath: string): Promise<FileStatus> {
+        return new Promise((resolve) => {
+            exec(
+                `cd "${workspaceRoot}" && git status --porcelain -- "${relativePath}"`,
+                { maxBuffer: 1024 * 1024 },
+                (error, stdout) => {
+                    if (error || !stdout.trim()) {
+                        resolve('modified');
+                        return;
+                    }
+                    const statusCode = stdout.substring(0, 2);
+                    if (statusCode.includes('A') || statusCode === '??') {
+                        resolve('added');
+                    } else if (statusCode.includes('D')) {
+                        resolve('deleted');
+                    } else {
+                        resolve('modified');
+                    }
+                }
+            );
+        });
+    }
+
+    async getUncommittedFilesWithStatus(workspaceRoot: string): Promise<Array<{ path: string; status: FileStatus }>> {
+        const isGit = await this.isGitRepository(workspaceRoot);
+        if (!isGit) return [];
+
+        return new Promise((resolve) => {
+            exec(
+                `cd "${workspaceRoot}" && git status --porcelain`,
+                { maxBuffer: 1024 * 1024 },
+                async (error, stdout) => {
+                    if (error) {
+                        resolve([]);
+                        return;
+                    }
+
+                    const entries = stdout
+                        .split('\n')
+                        .filter((line) => line.trim())
+                        .map((line) => {
+                            const statusCode = line.substring(0, 2);
+                            const filePath = line.substring(3).trim();
+                            let status: FileStatus = 'modified';
+                            if (statusCode.includes('A') || statusCode === '??') {
+                                status = 'added';
+                            } else if (statusCode.includes('D')) {
+                                status = 'deleted';
+                            }
+                            return { path: filePath, status };
+                        })
+                        .filter((f) => f.path.length > 0);
+
+                    // Expand directories to individual files
+                    const expandedFiles: Array<{ path: string; status: FileStatus }> = [];
+
+                    for (const entry of entries) {
+                        if (entry.path.endsWith('/')) {
+                            // It's a directory - list files inside
+                            const dirFiles = await this.listFilesInDirectory(workspaceRoot, entry.path);
+                            for (const file of dirFiles) {
+                                expandedFiles.push({ path: file, status: entry.status });
+                            }
+                        } else {
+                            expandedFiles.push(entry);
+                        }
+                    }
+
+                    resolve(expandedFiles);
+                }
+            );
+        });
+    }
+
+    private listFilesInDirectory(workspaceRoot: string, dirPath: string): Promise<string[]> {
+        return new Promise((resolve) => {
+            exec(
+                `cd "${workspaceRoot}" && find "${dirPath}" -type f 2>/dev/null`,
+                { maxBuffer: 1024 * 1024 },
+                (error, stdout) => {
+                    if (error || !stdout.trim()) {
+                        resolve([]);
+                        return;
+                    }
+                    const files = stdout
+                        .split('\n')
+                        .filter((line) => line.trim())
+                        .map((line) => line.trim());
                     resolve(files);
                 }
             );

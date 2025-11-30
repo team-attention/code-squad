@@ -3,3 +3,4 @@ export { VscodeFileSystemGateway } from './VscodeFileSystemGateway';
 export { VscodeGitGateway } from './VscodeGitGateway';
 export { VscodeNotificationGateway } from './VscodeNotificationGateway';
 export { FastGlobGateway } from './FastGlobGateway';
+export { VscodeLspGateway } from './VscodeLspGateway';

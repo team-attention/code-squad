@@ -152,7 +152,7 @@ export class AIDetectionController {
             const config = vscode.workspace.getConfiguration('sidecar');
             const includePatterns = config.get<string[]>('includeFiles', []);
 
-            const gitFiles = await this.gitPort.getUncommittedFiles(workspaceRoot);
+            const gitFilesWithStatus = await this.gitPort.getUncommittedFilesWithStatus(workspaceRoot);
 
             let configFiles: string[] = [];
             if (includePatterns.length > 0) {
@@ -165,12 +165,17 @@ export class AIDetectionController {
                 );
             }
 
-            const allPaths = new Set([...gitFiles, ...configFiles]);
+            const statusMap = new Map(gitFilesWithStatus.map(f => [f.path, f.status]));
+
+            const allPaths = new Set([
+                ...gitFilesWithStatus.map(f => f.path),
+                ...configFiles
+            ]);
 
             const baselineFiles: FileInfo[] = Array.from(allPaths).map((filePath) => ({
                 path: filePath,
                 name: path.basename(filePath),
-                status: 'modified' as const,
+                status: statusMap.get(filePath) || 'modified',
             }));
 
             this.panelStateManager!.setBaseline(baselineFiles);

@@ -26,7 +26,7 @@ export class GenerateDiffUseCase implements IGenerateDiffUseCase {
             diffResult = this.diffService.parseUnifiedDiff(relativePath, rawDiff);
         }
 
-        if (diffResult.hunks.length === 0) {
+        if (diffResult.chunks.length === 0) {
             return null;
         }
 
@@ -43,12 +43,12 @@ export class GenerateDiffUseCase implements IGenerateDiffUseCase {
                 currentContent = await this.fileSystemPort.readFile(absolutePath);
             }
         } catch {
-            return { file: relativePath, hunks: [], stats: { additions: 0, deletions: 0 } };
+            return { file: relativePath, chunks: [], stats: { additions: 0, deletions: 0 } };
         }
 
         if (snapshot === undefined) {
             if (!currentContent) {
-                return { file: relativePath, hunks: [], stats: { additions: 0, deletions: 0 } };
+                return { file: relativePath, chunks: [], stats: { additions: 0, deletions: 0 } };
             }
             return this.diffService.generateNewFileStructuredDiff(relativePath, currentContent);
         }

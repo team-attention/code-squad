@@ -1,9 +1,10 @@
-import { DiffResult } from '../../domain/entities/Diff';
 import {
     PanelState,
     FileInfo,
     CommentInfo,
     AIStatus,
+    DiffDisplayState,
+    DiffViewMode,
     createInitialPanelState,
 } from '../ports/outbound/PanelState';
 import { IPanelStateManager } from './IPanelStateManager';
@@ -144,7 +145,7 @@ export class PanelStateManager implements IPanelStateManager {
 
     // ===== Diff operations =====
 
-    showDiff(diff: DiffResult): void {
+    showDiff(diff: DiffDisplayState): void {
         this.state = {
             ...this.state,
             diff,
@@ -157,6 +158,61 @@ export class PanelStateManager implements IPanelStateManager {
         this.state = {
             ...this.state,
             diff: null,
+        };
+        this.render();
+    }
+
+    // ===== Chunk collapse operations =====
+
+    toggleChunkCollapse(chunkIndex: number): void {
+        if (!this.state.diff || !this.state.diff.chunkStates[chunkIndex]) return;
+
+        const newChunkStates = this.state.diff.chunkStates.map((cs, i) =>
+            i === chunkIndex ? { ...cs, isCollapsed: !cs.isCollapsed } : cs
+        );
+
+        this.state = {
+            ...this.state,
+            diff: {
+                ...this.state.diff,
+                chunkStates: newChunkStates,
+            },
+        };
+        this.render();
+    }
+
+    collapseAllChunks(): void {
+        if (!this.state.diff) return;
+
+        const newChunkStates = this.state.diff.chunkStates.map((cs) => ({
+            ...cs,
+            isCollapsed: true,
+        }));
+
+        this.state = {
+            ...this.state,
+            diff: {
+                ...this.state.diff,
+                chunkStates: newChunkStates,
+            },
+        };
+        this.render();
+    }
+
+    expandAllChunks(): void {
+        if (!this.state.diff) return;
+
+        const newChunkStates = this.state.diff.chunkStates.map((cs) => ({
+            ...cs,
+            isCollapsed: false,
+        }));
+
+        this.state = {
+            ...this.state,
+            diff: {
+                ...this.state.diff,
+                chunkStates: newChunkStates,
+            },
         };
         this.render();
     }
@@ -206,6 +262,28 @@ export class PanelStateManager implements IPanelStateManager {
             aiStatus: status,
         };
         this.render();
+    }
+
+    // ===== View mode =====
+
+    setTreeView(isTree: boolean): void {
+        if (this.state.isTreeView !== isTree) {
+            this.state = {
+                ...this.state,
+                isTreeView: isTree,
+            };
+            this.render();
+        }
+    }
+
+    setDiffViewMode(mode: DiffViewMode): void {
+        if (this.state.diffViewMode !== mode) {
+            this.state = {
+                ...this.state,
+                diffViewMode: mode,
+            };
+            this.render();
+        }
     }
 
     // ===== Reset =====

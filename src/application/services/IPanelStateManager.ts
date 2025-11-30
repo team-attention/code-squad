@@ -1,5 +1,4 @@
-import { DiffResult } from '../../domain/entities/Diff';
-import { PanelState, FileInfo, CommentInfo, AIStatus } from '../ports/outbound/PanelState';
+import { PanelState, FileInfo, CommentInfo, AIStatus, DiffDisplayState, DiffViewMode } from '../ports/outbound/PanelState';
 
 /**
  * Panel state manager - manages UI state and triggers rendering
@@ -27,8 +26,13 @@ export interface IPanelStateManager {
     setShowUncommitted(show: boolean): void;
 
     // Diff operations
-    showDiff(diff: DiffResult): void;
+    showDiff(diff: DiffDisplayState): void;
     clearDiff(): void;
+
+    // Chunk collapse operations
+    toggleChunkCollapse(chunkIndex: number): void;
+    collapseAllChunks(): void;
+    expandAllChunks(): void;
 
     // Comment operations
     addComment(comment: CommentInfo): void;
@@ -38,6 +42,10 @@ export interface IPanelStateManager {
 
     // AI status
     setAIStatus(status: AIStatus): void;
+
+    // View mode
+    setTreeView(isTree: boolean): void;
+    setDiffViewMode(mode: DiffViewMode): void;
 
     // Reset state (e.g., when panel closes)
     reset(): void;

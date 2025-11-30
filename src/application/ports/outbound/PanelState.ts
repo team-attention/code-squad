@@ -1,4 +1,7 @@
-import { DiffResult } from '../../../domain/entities/Diff';
+import { DiffResult, DiffChunk } from '../../../domain/entities/Diff';
+import { ScopeInfo } from './ISymbolPort';
+
+export type DiffViewMode = 'diff' | 'preview';
 
 /**
  * File information for panel display
@@ -7,6 +10,26 @@ export interface FileInfo {
     path: string;
     name: string;
     status: 'modified' | 'added' | 'deleted';
+}
+
+/**
+ * Extended chunk info for UI rendering
+ */
+export interface ChunkDisplayInfo {
+    index: number;
+    isCollapsed: boolean;
+    scopeLabel: string | null;
+}
+
+/**
+ * Diff display state (extends DiffResult for UI)
+ */
+export interface DiffDisplayState {
+    file: string;
+    chunks: DiffChunk[];
+    stats: { additions: number; deletions: number };
+    chunkStates: ChunkDisplayInfo[];
+    scopes: ScopeInfo[];
 }
 
 /**
@@ -39,9 +62,11 @@ export interface PanelState {
     uncommittedFiles: FileInfo[];
     showUncommitted: boolean;
     selectedFile: string | null;
-    diff: DiffResult | null;
+    diff: DiffDisplayState | null;
     comments: CommentInfo[];
     aiStatus: AIStatus;
+    isTreeView: boolean;
+    diffViewMode: DiffViewMode;
 }
 
 /**
@@ -56,5 +81,7 @@ export function createInitialPanelState(): PanelState {
         diff: null,
         comments: [],
         aiStatus: { active: false },
+        isTreeView: true,
+        diffViewMode: 'preview',
     };
 }

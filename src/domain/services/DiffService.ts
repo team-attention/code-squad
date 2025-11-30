@@ -1,4 +1,4 @@
-import { DiffHunk, DiffLine, DiffResult } from '../entities/Diff';
+import { DiffChunk, DiffLine, DiffResult } from '../entities/Diff';
 
 export interface DiffEntry {
     type: 'equal' | 'delete' | 'insert';
@@ -11,16 +11,18 @@ export class DiffService {
      */
     parseUnifiedDiff(file: string, diffText: string): DiffResult {
         if (!diffText || diffText.trim() === '') {
-            return { file, hunks: [], stats: { additions: 0, deletions: 0 } };
+            return { file, chunks: [], stats: { additions: 0, deletions: 0 } };
         }
 
         const lines = diffText.split('\n');
-        const hunks: DiffHunk[] = [];
-        let currentHunk: DiffHunk | null = null;
+        const chunks: DiffChunk[] = [];
+        let currentChunk: DiffChunk | null = null;
         let oldLineNum = 0;
         let newLineNum = 0;
         let additions = 0;
         let deletions = 0;
+        let chunkAdditions = 0;
+        let chunkDeletions = 0;
 
         for (const line of lines) {
             // Skip git diff metadata
@@ -32,26 +34,33 @@ export class DiffService {
                 continue;
             }
 
-            // Hunk header
+            // Chunk header
             if (line.startsWith('@@')) {
-                if (currentHunk) {
-                    hunks.push(currentHunk);
+                if (currentChunk) {
+                    currentChunk.stats = {
+                        additions: chunkAdditions,
+                        deletions: chunkDeletions
+                    };
+                    chunks.push(currentChunk);
                 }
+                chunkAdditions = 0;
+                chunkDeletions = 0;
                 const match = line.match(/@@ -(\d+),?\d* \+(\d+),?\d* @@(.*)/);
                 if (match) {
                     oldLineNum = parseInt(match[1], 10);
                     newLineNum = parseInt(match[2], 10);
-                    currentHunk = {
+                    currentChunk = {
                         header: line,
                         oldStart: oldLineNum,
                         newStart: newLineNum,
-                        lines: []
+                        lines: [],
+                        stats: { additions: 0, deletions: 0 }
                     };
                 }
                 continue;
             }
 
-            if (!currentHunk) continue;
+            if (!currentChunk) continue;
 
             let diffLine: DiffLine;
 
@@ -62,6 +71,7 @@ export class DiffService {
                     newLineNumber: newLineNum++
                 };
                 additions++;
+                chunkAdditions++;
             } else if (line.startsWith('-')) {
                 diffLine = {
                     type: 'deletion',
@@ -69,6 +79,7 @@ export class DiffService {
                     oldLineNumber: oldLineNum++
                 };
                 deletions++;
+                chunkDeletions++;
             } else {
                 diffLine = {
                     type: 'context',
@@ -78,14 +89,18 @@ export class DiffService {
                 };
             }
 
-            currentHunk.lines.push(diffLine);
+            currentChunk.lines.push(diffLine);
         }
 
-        if (currentHunk) {
-            hunks.push(currentHunk);
+        if (currentChunk) {
+            currentChunk.stats = {
+                additions: chunkAdditions,
+                deletions: chunkDeletions
+            };
+            chunks.push(currentChunk);
         }
 
-        return { file, hunks, stats: { additions, deletions } };
+        return { file, chunks, stats: { additions, deletions } };
     }
 
     /**

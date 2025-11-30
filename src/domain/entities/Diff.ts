@@ -9,13 +9,17 @@ export interface DiffLine {
 }
 
 /**
- * Represents a hunk (chunk) of changes in a diff
+ * Represents a chunk of changes in a diff
  */
-export interface DiffHunk {
+export interface DiffChunk {
     header: string;
     oldStart: number;
     newStart: number;
     lines: DiffLine[];
+    stats: {
+        additions: number;
+        deletions: number;
+    };
 }
 
 /**
@@ -23,7 +27,7 @@ export interface DiffHunk {
  */
 export interface DiffResult {
     file: string;
-    hunks: DiffHunk[];
+    chunks: DiffChunk[];
     stats: {
         additions: number;
         deletions: number;

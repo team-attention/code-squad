@@ -24,6 +24,7 @@ import {
     VscodeGitGateway,
     VscodeNotificationGateway,
     FastGlobGateway,
+    VscodeLspGateway,
 } from './adapters/outbound/gateways';
 
 // Infrastructure - Repositories
@@ -53,6 +54,7 @@ export function activate(context: vscode.ExtensionContext) {
     const gitGateway = new VscodeGitGateway();
     const notificationGateway = new VscodeNotificationGateway();
     const fileGlobber = new FastGlobGateway();
+    const lspGateway = new VscodeLspGateway();
 
     // ===== Application Layer - Use Cases =====
     const captureSnapshotsUseCase = new CaptureSnapshotsUseCase(
@@ -92,6 +94,7 @@ export function activate(context: vscode.ExtensionContext) {
     const fileWatchController = new FileWatchController();
     fileWatchController.setPanelStateManager(panelStateManager);
     fileWatchController.setGenerateDiffUseCase(generateDiffUseCase);
+    fileWatchController.setGitPort(gitGateway);
 
     // Activate Controllers
     aiDetectionController.activate(context);
@@ -118,7 +121,8 @@ export function activate(context: vscode.ExtensionContext) {
                         panelStateManager.markCommentsAsSubmitted(result.submittedIds);
                     }
                 },
-                panelStateManager
+                panelStateManager,
+                lspGateway
             );
 
             // Clean up when panel is disposed
