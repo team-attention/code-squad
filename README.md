@@ -4,7 +4,7 @@
 
 Sidecar displays file changes from AI coding tools (Claude Code, Codex, Gemini CLI) in a dedicated side panel, enabling you to review modifications as they happen.
 
-![Demo](https://github.com/user-attachments/assets/b893de21-bf19-430f-97c6-0ff544a7ac25)
+https://github.com/user-attachments/assets/b893de21-bf19-430f-97c6-0ff544a7ac25
 
 ## Features
 
