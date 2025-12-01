@@ -83,7 +83,7 @@ export function createInitialPanelState(): PanelState {
         comments: [],
         aiStatus: { active: false },
         isTreeView: true,
-        diffViewMode: 'preview',
+        diffViewMode: 'diff',
         searchQuery: '',
     };
 }
