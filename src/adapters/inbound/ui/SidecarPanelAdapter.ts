@@ -2555,7 +2555,8 @@ export class SidecarPanelAdapter {
           };
 
           // Check if second row is separator (alignment row)
-          const hasSeparator = rows.length > 1 && rows[1].match(/^\\|[\\s:-]+\\|$/);
+          // Allow | in the middle for multi-column tables: | --- | --- |
+          const hasSeparator = rows.length > 1 && rows[1].match(/^\\|[\\s:|-]+\\|$/);
           const headerRow = parseRow(rows[0]);
           let alignments = [];
 
@@ -2603,7 +2604,10 @@ export class SidecarPanelAdapter {
           // Store code blocks first to protect them from processing
           const codeBlocks = [];
           // Match fenced code blocks with optional language
-          let html = text.replace(/\`\`\`(\\w*)\\n([\\s\\S]*?)\`\`\`/g, (match, lang, code) => {
+          // - Allow language names with hyphens/plus (c++, c#, etc)
+          // - Allow trailing spaces after language name
+          // - Handle both Unix (\\n) and Windows (\\r\\n) line endings
+          let html = text.replace(/\`\`\`([\\w+-]*)[ \\t]*\\r?\\n([\\s\\S]*?)\\r?\\n[ \\t]*\`\`\`/g, (match, lang, code) => {
             const index = codeBlocks.length;
             const highlighted = highlightCode(code.trim(), lang);
             codeBlocks.push('<pre><code class="language-' + (lang || '') + '">' + highlighted + '</code></pre>');
@@ -2621,21 +2625,38 @@ export class SidecarPanelAdapter {
           // Split into lines for processing
           const lines = html.split('\\n');
           const processedLines = [];
-          let inList = false;
-          let listType = null;
           let inTable = false;
           let tableRows = [];
+
+          // Stack-based nested list support
+          // Each entry: { type: 'ul'|'ol', indent: number }
+          let listStack = [];
+
+          // Helper to get indent level (count leading spaces, 2 spaces = 1 level)
+          const getIndentLevel = (line) => {
+            const match = line.match(/^(\\s*)/);
+            return match ? Math.floor(match[1].length / 2) : 0;
+          };
+
+          // Helper to close lists down to target level
+          const closeListsToLevel = (targetLevel) => {
+            while (listStack.length > targetLevel) {
+              const closed = listStack.pop();
+              processedLines.push(closed.type === 'ul' ? '</ul>' : '</ol>');
+            }
+          };
+
+          // Helper to close all lists
+          const closeAllLists = () => {
+            closeListsToLevel(0);
+          };
 
           for (let i = 0; i < lines.length; i++) {
             let line = lines[i];
 
             // Check for code block placeholder
             if (line.trim().match(/^\\{\\{CODE_BLOCK_\\d+\\}\\}$/)) {
-              if (inList) {
-                processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
-                inList = false;
-                listType = null;
-              }
+              closeAllLists();
               if (inTable) {
                 processedLines.push(renderTable(tableRows));
                 tableRows = [];
@@ -2647,11 +2668,7 @@ export class SidecarPanelAdapter {
 
             // Table row detection
             if (line.trim().match(/^\\|.*\\|$/)) {
-              if (inList) {
-                processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
-                inList = false;
-                listType = null;
-              }
+              closeAllLists();
               inTable = true;
               tableRows.push(line.trim());
               continue;
@@ -2664,22 +2681,14 @@ export class SidecarPanelAdapter {
 
             // Horizontal rule
             if (line.trim().match(/^(-{3,}|\\*{3,}|_{3,})$/)) {
-              if (inList) {
-                processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
-                inList = false;
-                listType = null;
-              }
+              closeAllLists();
               processedLines.push('<hr>');
               continue;
             }
 
             // Blockquote
             if (line.match(/^>\\s?/)) {
-              if (inList) {
-                processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
-                inList = false;
-                listType = null;
-              }
+              closeAllLists();
               const content = line.replace(/^>\\s?/, '');
               processedLines.push('<blockquote><p>' + processInline(content) + '</p></blockquote>');
               continue;
@@ -2687,11 +2696,7 @@ export class SidecarPanelAdapter {
 
             // Headers
             if (line.match(/^#{1,6} /)) {
-              if (inList) {
-                processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
-                inList = false;
-                listType = null;
-              }
+              closeAllLists();
               const level = line.match(/^(#+)/)[1].length;
               const content = line.replace(/^#+\\s*/, '');
               processedLines.push('<h' + level + '>' + escapeHtml(content) + '</h' + level + '>');
@@ -2699,14 +2704,30 @@ export class SidecarPanelAdapter {
             }
 
             // Unordered list (including task lists with checkboxes)
-            if (line.match(/^\\s*[-*+]\\s+/)) {
-              let content = line.replace(/^\\s*[-*+]\\s+/, '');
-              if (!inList || listType !== 'ul') {
-                if (inList) processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
-                processedLines.push('<ul>');
-                inList = true;
-                listType = 'ul';
+            const ulMatch = line.match(/^(\\s*)[-*+]\\s+(.*)$/);
+            if (ulMatch) {
+              const indent = Math.floor(ulMatch[1].length / 2);
+              const content = ulMatch[2];
+
+              // Close lists if we're going to a shallower or same level with different type
+              if (listStack.length > indent + 1) {
+                closeListsToLevel(indent + 1);
               }
+
+              // Check if we need to open a new list
+              if (listStack.length === 0 || listStack.length <= indent) {
+                // Need to open new list(s)
+                while (listStack.length <= indent) {
+                  processedLines.push('<ul>');
+                  listStack.push({ type: 'ul', indent: listStack.length });
+                }
+              } else if (listStack[indent] && listStack[indent].type !== 'ul') {
+                // Same level but different type, close and reopen
+                closeListsToLevel(indent);
+                processedLines.push('<ul>');
+                listStack.push({ type: 'ul', indent: indent });
+              }
+
               // Check for task list item (checkbox)
               const checkboxMatch = content.match(/^\\[([xX\\s])\\]\\s+(.*)$/);
               if (checkboxMatch) {
@@ -2721,42 +2742,48 @@ export class SidecarPanelAdapter {
             }
 
             // Ordered list
-            if (line.match(/^\\s*\\d+\\.\\s+/)) {
-              const content = line.replace(/^\\s*\\d+\\.\\s+/, '');
-              if (!inList || listType !== 'ol') {
-                if (inList) processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
-                processedLines.push('<ol>');
-                inList = true;
-                listType = 'ol';
+            const olMatch = line.match(/^(\\s*)\\d+\\.\\s+(.*)$/);
+            if (olMatch) {
+              const indent = Math.floor(olMatch[1].length / 2);
+              const content = olMatch[2];
+
+              // Close lists if we're going to a shallower level
+              if (listStack.length > indent + 1) {
+                closeListsToLevel(indent + 1);
               }
+
+              // Check if we need to open a new list
+              if (listStack.length === 0 || listStack.length <= indent) {
+                // Need to open new list(s)
+                while (listStack.length <= indent) {
+                  processedLines.push('<ol>');
+                  listStack.push({ type: 'ol', indent: listStack.length });
+                }
+              } else if (listStack[indent] && listStack[indent].type !== 'ol') {
+                // Same level but different type, close and reopen
+                closeListsToLevel(indent);
+                processedLines.push('<ol>');
+                listStack.push({ type: 'ol', indent: indent });
+              }
+
               processedLines.push('<li>' + processInline(content) + '</li>');
               continue;
             }
 
-            // Empty line - close list if open
+            // Empty line - close all lists
             if (line.trim() === '') {
-              if (inList) {
-                processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
-                inList = false;
-                listType = null;
-              }
+              closeAllLists();
               processedLines.push('');
               continue;
             }
 
             // Regular paragraph text
-            if (inList) {
-              processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
-              inList = false;
-              listType = null;
-            }
+            closeAllLists();
             processedLines.push(processInline(line));
           }
 
-          // Close any open list
-          if (inList) {
-            processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
-          }
+          // Close any open lists
+          closeAllLists();
 
           // Close any open table
           if (inTable && tableRows.length > 0) {
