@@ -68,19 +68,22 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "test": "node ./out/test/runTest.js",
+    "test:unit": "npm run compile && mocha --ui tdd ./out/test/**/*.test.js"
   },
   "dependencies": {
     "fast-glob": "^3.3.3",
     "ignore": "^5.3.2"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
     "@types/vscode": "^1.93.0",
     "@typescript-eslint/eslint-plugin": "^7.14.1",
     "@typescript-eslint/parser": "^7.11.0",
     "esbuild": "^0.27.0",
     "eslint": "^8.57.0",
+    "mocha": "^11.0.1",
     "typescript": "^5.4.5"
   }
 }

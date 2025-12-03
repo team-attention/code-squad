@@ -135,58 +135,149 @@ export class DiffService {
 
     generateNewFileDiff(content: string): string {
         if (!content) return '';
-        const lines = content.split('\n');
+        let lines = content.split('\n');
+        // Remove trailing empty string from split if content ends with newline
+        if (lines.length > 0 && lines[lines.length - 1] === '') {
+            lines = lines.slice(0, -1);
+        }
+        if (lines.length === 0) return '';
         const fakeDiff = lines.map(line => `+${line}`).join('\n');
         return `@@ -0,0 +1,${lines.length} @@ New file\n${fakeDiff}`;
     }
 
+    generateDeletedFileDiff(content: string): string {
+        if (!content) return '';
+        let lines = content.split('\n');
+        // Remove trailing empty string from split if content ends with newline
+        if (lines.length > 0 && lines[lines.length - 1] === '') {
+            lines = lines.slice(0, -1);
+        }
+        if (lines.length === 0) return '';
+        const fakeDiff = lines.map(line => `-${line}`).join('\n');
+        return `@@ -1,${lines.length} +0,0 @@ Deleted file\n${fakeDiff}`;
+    }
+
+    generateDeletedFileStructuredDiff(file: string, content: string): DiffResult {
+        const unifiedDiff = this.generateDeletedFileDiff(content);
+        return this.parseUnifiedDiff(file, unifiedDiff);
+    }
+
     private formatAsUnifiedDiff(diff: DiffEntry[]): string {
         let result = '';
-        let hunkStart = -1;
+        let hunkOldStart = -1;
+        let hunkNewStart = -1;
         let hunkLines: string[] = [];
         let oldLineNum = 1;
         let newLineNum = 1;
         let oldCount = 0;
         let newCount = 0;
+        let trailingContext: string[] = [];
+        const CONTEXT_LINES = 3;
 
         const flushHunk = () => {
             if (hunkLines.length > 0) {
-                result += `@@ -${hunkStart},${oldCount} +${hunkStart},${newCount} @@\n`;
+                result += `@@ -${hunkOldStart},${oldCount} +${hunkNewStart},${newCount} @@\n`;
                 result += hunkLines.join('\n') + '\n';
                 hunkLines = [];
+                hunkOldStart = -1;
+                hunkNewStart = -1;
                 oldCount = 0;
                 newCount = 0;
+                trailingContext = [];
             }
         };
 
-        for (const entry of diff) {
+        for (let i = 0; i < diff.length; i++) {
+            const entry = diff[i];
+
             if (entry.type === 'equal') {
                 if (hunkLines.length > 0) {
-                    hunkLines.push(` ${entry.line}`);
-                    oldCount++;
-                    newCount++;
+                    // Inside a hunk - add as trailing context
+                    trailingContext.push(` ${entry.line}`);
 
-                    const contextCount = hunkLines.filter(l => l.startsWith(' ')).length;
-                    if (contextCount >= 3) {
-                        flushHunk();
+                    // Check if we should flush (too many context lines and no more changes nearby)
+                    if (trailingContext.length >= CONTEXT_LINES) {
+                        // Look ahead to see if there are more changes within context range
+                        let hasMoreChanges = false;
+                        for (let j = i + 1; j <= i + CONTEXT_LINES && j < diff.length; j++) {
+                            if (diff[j].type !== 'equal') {
+                                hasMoreChanges = true;
+                                break;
+                            }
+                        }
+
+                        if (!hasMoreChanges) {
+                            // Add trailing context and flush
+                            for (const ctx of trailingContext) {
+                                hunkLines.push(ctx);
+                                oldCount++;
+                                newCount++;
+                            }
+                            flushHunk();
+                        } else {
+                            // Keep accumulating - there are more changes ahead
+                            for (const ctx of trailingContext) {
+                                hunkLines.push(ctx);
+                                oldCount++;
+                                newCount++;
+                            }
+                            trailingContext = [];
+                        }
                     }
                 }
                 oldLineNum++;
                 newLineNum++;
-            } else if (entry.type === 'delete') {
-                if (hunkStart === -1) hunkStart = oldLineNum;
-                hunkLines.push(`-${entry.line}`);
-                oldCount++;
-                oldLineNum++;
-            } else if (entry.type === 'insert') {
-                if (hunkStart === -1) hunkStart = newLineNum;
-                hunkLines.push(`+${entry.line}`);
-                newCount++;
-                newLineNum++;
+            } else {
+                // Before adding a change, flush any pending trailing context
+                if (trailingContext.length > 0) {
+                    for (const ctx of trailingContext) {
+                        hunkLines.push(ctx);
+                        oldCount++;
+                        newCount++;
+                    }
+                    trailingContext = [];
+                }
+
+                // Start new hunk if needed, with leading context
+                if (hunkOldStart === -1) {
+                    hunkOldStart = oldLineNum;
+                    hunkNewStart = newLineNum;
+
+                    // Add leading context from previous equal lines
+                    const leadingContextStart = Math.max(0, i - CONTEXT_LINES);
+                    for (let j = leadingContextStart; j < i; j++) {
+                        if (diff[j].type === 'equal') {
+                            hunkLines.push(` ${diff[j].line}`);
+                            oldCount++;
+                            newCount++;
+                            hunkOldStart--;
+                            hunkNewStart--;
+                        }
+                    }
+                }
+
+                if (entry.type === 'delete') {
+                    hunkLines.push(`-${entry.line}`);
+                    oldCount++;
+                    oldLineNum++;
+                } else if (entry.type === 'insert') {
+                    hunkLines.push(`+${entry.line}`);
+                    newCount++;
+                    newLineNum++;
+                }
             }
         }
 
-        flushHunk();
+        // Flush any remaining hunk with trailing context
+        if (hunkLines.length > 0) {
+            for (const ctx of trailingContext) {
+                hunkLines.push(ctx);
+                oldCount++;
+                newCount++;
+            }
+            flushHunk();
+        }
+
         return result;
     }
 

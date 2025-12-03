@@ -38,14 +38,17 @@ export class GenerateDiffUseCase implements IGenerateDiffUseCase {
         const absolutePath = this.fileSystemPort.toAbsolutePath(relativePath);
 
         let currentContent = '';
+        let fileExists = false;
         try {
-            if (await this.fileSystemPort.fileExists(absolutePath)) {
+            fileExists = await this.fileSystemPort.fileExists(absolutePath);
+            if (fileExists) {
                 currentContent = await this.fileSystemPort.readFile(absolutePath);
             }
         } catch {
             return { file: relativePath, chunks: [], stats: { additions: 0, deletions: 0 } };
         }
 
+        // Case 1: No snapshot exists
         if (snapshot === undefined) {
             if (!currentContent) {
                 return { file: relativePath, chunks: [], stats: { additions: 0, deletions: 0 } };
@@ -53,6 +56,12 @@ export class GenerateDiffUseCase implements IGenerateDiffUseCase {
             return this.diffService.generateNewFileStructuredDiff(relativePath, currentContent);
         }
 
+        // Case 2: Snapshot exists but file was deleted
+        if (!fileExists || !currentContent) {
+            return this.diffService.generateDeletedFileStructuredDiff(relativePath, snapshot.content);
+        }
+
+        // Case 3: Both snapshot and current content exist - compare them
         return this.diffService.generateStructuredDiff(relativePath, snapshot.content, currentContent);
     }
 }
