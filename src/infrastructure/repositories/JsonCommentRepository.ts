@@ -51,6 +51,30 @@ export class JsonCommentRepository implements ICommentRepository {
         this.persistComments();
     }
 
+    async update(id: string, text: string): Promise<Comment | null> {
+        const index = this.comments.findIndex(c => c.id === id);
+        if (index === -1) {
+            return null;
+        }
+
+        const existing = this.comments[index];
+        const updated = existing.withText(text);
+        this.comments[index] = updated;
+        this.persistComments();
+        return updated;
+    }
+
+    async delete(id: string): Promise<boolean> {
+        const index = this.comments.findIndex(c => c.id === id);
+        if (index === -1) {
+            return false;
+        }
+
+        this.comments.splice(index, 1);
+        this.persistComments();
+        return true;
+    }
+
     private loadCommentsFrom(filePath: string): void {
         if (!fs.existsSync(filePath)) {
             return;

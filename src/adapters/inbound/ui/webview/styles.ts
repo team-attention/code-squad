@@ -636,6 +636,118 @@ h3 {
   margin-left: auto;
 }
 
+/* Comment header with actions */
+.comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.comment-location {
+  cursor: pointer;
+  color: var(--vscode-textLink-foreground);
+  font-size: 10px;
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.comment-location:hover {
+  text-decoration: underline;
+}
+
+.comment-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.btn-icon {
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 12px;
+  width: auto;
+}
+
+.btn-icon:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.btn-icon.btn-danger:hover {
+  color: var(--vscode-errorForeground, #f85149);
+}
+
+/* Comment text */
+.comment-text {
+  word-wrap: break-word;
+}
+
+/* Comment edit form */
+.comment-edit-form {
+  margin-top: 8px;
+}
+
+.comment-edit-form textarea {
+  width: 100%;
+  min-height: 60px;
+  margin-bottom: 8px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 4px;
+  padding: 8px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.comment-edit-form textarea:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+}
+
+/* Submitted section */
+.submitted-section {
+  margin-top: 16px;
+  border-top: 1px solid var(--vscode-panel-border);
+  padding-top: 8px;
+}
+
+.submitted-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+.submitted-header:hover {
+  color: var(--vscode-foreground);
+}
+
+.submitted-toggle {
+  font-size: 10px;
+}
+
+.submitted-list {
+  margin-top: 8px;
+}
+
+.submitted-badge {
+  font-size: 10px;
+  color: var(--vscode-testing-iconPassed, #238636);
+}
+
 .comment-tooltip {
   display: none;
   position: absolute;
@@ -1175,5 +1287,184 @@ button:hover {
 .diff-search-match.current {
   background: var(--vscode-editor-findMatchBackground, rgba(255, 150, 50, 0.6));
   outline: 1px solid var(--vscode-editor-findMatchBorder, #ff9632);
+}
+
+/* Line highlight animation for navigation */
+@keyframes highlight-flash {
+  0% {
+    background-color: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+  }
+  50% {
+    background-color: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.diff-line.highlight-target {
+  animation: highlight-flash 2s ease-out;
+}
+
+.diff-line.highlight-target td {
+  background-color: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33)) !important;
+  transition: background-color 0.5s ease-out;
+}
+
+/* Gutter column */
+.col-gutter {
+  width: 20px;
+}
+
+.diff-gutter {
+  width: 20px;
+  min-width: 20px;
+  text-align: center;
+  cursor: default;
+  user-select: none;
+  border-right: 1px solid var(--vscode-panel-border);
+  vertical-align: middle;
+}
+
+.diff-gutter.has-comment {
+  cursor: pointer;
+}
+
+.diff-gutter.has-comment:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+/* Comment marker */
+.comment-marker {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.diff-gutter.pending .comment-marker {
+  color: var(--vscode-textLink-foreground, #58a6ff);
+}
+
+.diff-gutter.submitted .comment-marker {
+  color: var(--vscode-descriptionForeground, #888);
+}
+
+/* Inline comment row */
+.inline-comment-row {
+  background: var(--vscode-editor-background);
+}
+
+.inline-comment-row.collapsed {
+  display: none;
+}
+
+.inline-comments {
+  padding: 8px 8px 8px 28px;
+  border-left: 3px solid var(--vscode-textLink-foreground);
+  margin: 4px 0;
+}
+
+.inline-comment-box {
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.inline-comment-box:last-child {
+  margin-bottom: 0;
+}
+
+.inline-comment-box.pending {
+  border-left: 3px solid var(--vscode-textLink-foreground);
+}
+
+.inline-comment-box.submitted {
+  border-left: 3px solid var(--vscode-descriptionForeground);
+  opacity: 0.8;
+}
+
+/* Comment header */
+.inline-comment-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--vscode-titleBar-inactiveBackground);
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.fold-toggle {
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  padding: 2px;
+  font-size: 10px;
+  width: auto;
+}
+
+.fold-toggle:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  border-radius: 2px;
+}
+
+.fold-icon {
+  display: inline-block;
+  width: 10px;
+}
+
+.comment-author {
+  flex: 1;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.inline-comment-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.submitted-label {
+  font-size: 10px;
+  color: var(--vscode-testing-iconPassed, #238636);
+}
+
+/* Comment body */
+.inline-comment-body {
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.inline-comment-box.folded .inline-comment-body {
+  display: none;
+}
+
+/* Edit form */
+.inline-comment-edit {
+  padding: 8px;
+}
+
+.inline-comment-edit textarea {
+  width: 100%;
+  min-height: 60px;
+  margin-bottom: 8px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 4px;
+  padding: 8px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.inline-comment-edit textarea:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
 }
 `;

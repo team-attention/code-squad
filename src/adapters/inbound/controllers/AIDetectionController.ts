@@ -14,6 +14,8 @@ import { PanelStateManager } from '../../../application/services/PanelStateManag
 import { CaptureSnapshotsUseCase } from '../../../application/useCases/CaptureSnapshotsUseCase';
 import { GenerateDiffUseCase } from '../../../application/useCases/GenerateDiffUseCase';
 import { AddCommentUseCase } from '../../../application/useCases/AddCommentUseCase';
+import { EditCommentUseCase } from '../../../application/useCases/EditCommentUseCase';
+import { DeleteCommentUseCase } from '../../../application/useCases/DeleteCommentUseCase';
 import { SubmitCommentsUseCase } from '../../../application/useCases/SubmitCommentsUseCase';
 import { InMemorySnapshotRepository } from '../../../infrastructure/repositories/InMemorySnapshotRepository';
 import { VscodeTerminalGateway } from '../../outbound/gateways/VscodeTerminalGateway';
@@ -142,6 +144,14 @@ export class AIDetectionController {
             this.commentRepository
         );
 
+        const editCommentUseCase = new EditCommentUseCase(
+            this.commentRepository
+        );
+
+        const deleteCommentUseCase = new DeleteCommentUseCase(
+            this.commentRepository
+        );
+
         // 스냅샷 캡처
         try {
             const config = vscode.workspace.getConfiguration('sidecar');
@@ -178,7 +188,9 @@ export class AIDetectionController {
                 }
             },
             stateManager,
-            this.symbolPort
+            this.symbolPort,
+            editCommentUseCase,
+            deleteCommentUseCase
         );
 
         // ===== SessionContext 생성 및 저장 =====

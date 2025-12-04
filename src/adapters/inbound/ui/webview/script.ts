@@ -286,9 +286,11 @@ function onFileChange() {
 
 // ===== Single message handler - state-based rendering =====
 window.addEventListener('message', event => {
-  const { type, state } = event.data;
-  if (type === 'render' && state) {
-    renderState(state);
+  const message = event.data;
+  if (message.type === 'render' && message.state) {
+    renderState(message.state);
+  } else if (message.type === 'scrollToLine') {
+    scrollToLineInDiff(message.line, message.commentId);
   }
 });
 
@@ -296,7 +298,7 @@ function renderState(state) {
   renderFileList(state.sessionFiles, state.uncommittedFiles, state.showUncommitted, state.selectedFile, state.isTreeView, state.searchQuery, state.diff);
   renderComments(state.comments);
   renderAIStatus(state.aiStatus);
-  renderDiff(state.diff, state.selectedFile, state.diffViewMode);
+  renderDiff(state.diff, state.selectedFile, state.diffViewMode, state.comments);
 }
 
 // ===== File List Rendering =====
@@ -557,38 +559,227 @@ function renderComments(comments) {
     return;
   }
 
-  const sortedComments = [...comments].reverse();
+  // Separate pending and submitted
+  const pending = comments.filter(c => !c.isSubmitted);
+  const submitted = comments.filter(c => c.isSubmitted);
 
-  list.innerHTML = sortedComments.map(comment => {
+  let html = '';
+
+  // Pending comments with edit/delete (most recent first)
+  const sortedPending = [...pending].reverse();
+  sortedPending.forEach(comment => {
     const lineDisplay = comment.endLine
       ? \`\${comment.line}-\${comment.endLine}\`
       : comment.line;
-    const submittedClass = comment.isSubmitted ? 'submitted' : '';
-    const icon = comment.isSubmitted ? '✓' : '📝';
-    const statusLabel = comment.isSubmitted ? '<span class="comment-status">(submitted)</span>' : '';
 
-    const timeStr = comment.timestamp
-      ? new Date(comment.timestamp).toLocaleString()
-      : '';
-
-    const tooltip = comment.isSubmitted && comment.codeContext
-      ? \`<div class="comment-tooltip">
-          <div class="tooltip-code">\${escapeHtml(comment.codeContext)}</div>
-          <div class="tooltip-time">\${timeStr}</div>
-        </div>\`
-      : '';
-
-    return \`
-      <div class="comment-item \${submittedClass}" data-id="\${comment.id}">
-        <div class="comment-meta">
-          <span>\${icon} \${comment.file}:\${lineDisplay}</span>
-          \${statusLabel}
+    html += \`
+      <div class="comment-item" data-id="\${comment.id}">
+        <div class="comment-header">
+          <span class="comment-location" onclick="navigateToComment('\${comment.id}')" title="\${comment.file}:\${lineDisplay}">
+            📝 \${comment.file}:\${lineDisplay}
+          </span>
+          <div class="comment-actions">
+            <button class="btn-icon" onclick="startEditComment('\${comment.id}')" title="Edit">✎</button>
+            <button class="btn-icon btn-danger" onclick="deleteComment('\${comment.id}')" title="Delete">🗑</button>
+          </div>
         </div>
-        <div>\${escapeHtml(comment.text)}</div>
-        \${tooltip}
+        <div class="comment-text" id="comment-text-\${comment.id}">\${escapeHtml(comment.text)}</div>
+        <div class="comment-edit-form" id="comment-edit-\${comment.id}" style="display: none;">
+          <textarea class="comment-textarea">\${escapeHtml(comment.text)}</textarea>
+          <div class="comment-form-actions">
+            <button class="btn-secondary" onclick="cancelEditComment('\${comment.id}')">Cancel</button>
+            <button onclick="saveEditComment('\${comment.id}')">Save</button>
+          </div>
+        </div>
       </div>
     \`;
-  }).join('');
+  });
+
+  // Submitted history section (collapsed by default)
+  if (submitted.length > 0) {
+    html += \`
+      <div class="submitted-section">
+        <div class="submitted-header" onclick="toggleSubmittedHistory()">
+          <span class="submitted-toggle" id="submitted-toggle">▶</span>
+          <span>Submitted (\${submitted.length})</span>
+        </div>
+        <div class="submitted-list" id="submitted-list" style="display: none;">
+    \`;
+    const sortedSubmitted = [...submitted].reverse();
+    sortedSubmitted.forEach(comment => {
+      const lineDisplay = comment.endLine
+        ? \`\${comment.line}-\${comment.endLine}\`
+        : comment.line;
+      html += \`
+        <div class="comment-item submitted" data-id="\${comment.id}">
+          <div class="comment-header">
+            <span class="comment-location">✓ \${comment.file}:\${lineDisplay}</span>
+            <span class="submitted-badge">submitted</span>
+          </div>
+          <div class="comment-text">\${escapeHtml(comment.text)}</div>
+        </div>
+      \`;
+    });
+    html += \`
+        </div>
+      </div>
+    \`;
+  }
+
+  list.innerHTML = html;
+}
+
+// ===== Comment Edit/Delete Functions =====
+function startEditComment(id) {
+  document.getElementById('comment-text-' + id).style.display = 'none';
+  document.getElementById('comment-edit-' + id).style.display = 'block';
+  document.querySelector('#comment-edit-' + id + ' textarea').focus();
+}
+
+function cancelEditComment(id) {
+  document.getElementById('comment-text-' + id).style.display = 'block';
+  document.getElementById('comment-edit-' + id).style.display = 'none';
+}
+
+function saveEditComment(id) {
+  const textarea = document.querySelector('#comment-edit-' + id + ' textarea');
+  const text = textarea.value.trim();
+  if (text) {
+    vscode.postMessage({ type: 'editComment', id, text });
+  }
+  cancelEditComment(id);
+}
+
+function deleteComment(id) {
+  vscode.postMessage({ type: 'deleteComment', id });
+}
+
+function toggleSubmittedHistory() {
+  const list = document.getElementById('submitted-list');
+  const toggle = document.getElementById('submitted-toggle');
+  if (list.style.display === 'none') {
+    list.style.display = 'block';
+    toggle.textContent = '▼';
+  } else {
+    list.style.display = 'none';
+    toggle.textContent = '▶';
+  }
+}
+
+function navigateToComment(id) {
+  vscode.postMessage({ type: 'navigateToComment', id });
+}
+
+// ===== Inline Comment Toggle =====
+const foldedComments = new Set(); // line numbers that are folded
+
+function toggleInlineComment(lineNum) {
+  const commentRow = document.querySelector('.inline-comment-row[data-line="' + lineNum + '"]');
+  if (!commentRow) return;
+
+  if (commentRow.classList.contains('collapsed')) {
+    commentRow.classList.remove('collapsed');
+    foldedComments.delete(lineNum);
+  } else {
+    commentRow.classList.add('collapsed');
+    foldedComments.add(lineNum);
+  }
+
+  // Update marker icon
+  updateMarkerIcon(lineNum);
+}
+
+function updateMarkerIcon(lineNum) {
+  const gutter = document.querySelector('.diff-line[data-line="' + lineNum + '"] .diff-gutter');
+  if (!gutter) return;
+
+  const marker = gutter.querySelector('.comment-marker');
+  if (marker) {
+    const isFolded = foldedComments.has(lineNum);
+    marker.textContent = isFolded ? '○' : '●'; // Hollow when folded, filled when expanded
+  }
+}
+
+// ===== Inline Comment Fold/Edit =====
+function toggleCommentFold(commentId) {
+  const body = document.getElementById('inline-body-' + commentId);
+  const box = document.querySelector('.inline-comment-box[data-comment-id="' + commentId + '"]');
+  const icon = box?.querySelector('.fold-icon');
+
+  if (body && box) {
+    const isCollapsed = box.classList.toggle('folded');
+    if (icon) {
+      icon.textContent = isCollapsed ? '▶' : '▼';
+    }
+  }
+}
+
+function startInlineEdit(commentId) {
+  document.getElementById('inline-body-' + commentId).style.display = 'none';
+  document.getElementById('inline-edit-' + commentId).style.display = 'block';
+  document.querySelector('#inline-edit-' + commentId + ' textarea').focus();
+}
+
+function cancelInlineEdit(commentId) {
+  document.getElementById('inline-body-' + commentId).style.display = 'block';
+  document.getElementById('inline-edit-' + commentId).style.display = 'none';
+}
+
+function saveInlineEdit(commentId) {
+  const textarea = document.querySelector('#inline-edit-' + commentId + ' textarea');
+  const text = textarea.value.trim();
+  if (text) {
+    vscode.postMessage({ type: 'editComment', id: commentId, text });
+  }
+  cancelInlineEdit(commentId);
+}
+
+function scrollToLineInDiff(lineNumber, commentId) {
+  // Expand sidebar if collapsed
+  if (bodyEl.classList.contains('sidebar-collapsed')) {
+    expandSidebar();
+  }
+
+  // Find the diff viewer
+  const diffContainer = document.getElementById('diff-viewer');
+  if (!diffContainer) return;
+
+  // Find which chunk contains this line and expand if collapsed
+  const chunkBodies = diffContainer.querySelectorAll('tbody.chunk-lines');
+  let targetRow = null;
+
+  chunkBodies.forEach((chunk, index) => {
+    const rows = chunk.querySelectorAll('tr[data-line]');
+    rows.forEach(row => {
+      if (parseInt(row.dataset.line) === lineNumber) {
+        // Expand chunk if collapsed
+        if (chunk.classList.contains('collapsed')) {
+          vscode.postMessage({ type: 'toggleChunkCollapse', index });
+        }
+        targetRow = row;
+      }
+    });
+  });
+
+  // If not found in chunks, try direct query
+  if (!targetRow) {
+    targetRow = diffContainer.querySelector('tr[data-line="' + lineNumber + '"]');
+  }
+
+  if (targetRow) {
+    // Small delay to allow chunk expansion animation
+    setTimeout(() => {
+      targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Add highlight class (animated in Task 6)
+      targetRow.classList.add('highlight-target');
+
+      // Remove highlight after animation
+      setTimeout(() => {
+        targetRow.classList.remove('highlight-target');
+      }, 2000);
+    }, 100);
+  }
 }
 
 // ===== AI Status Rendering =====
@@ -609,7 +800,7 @@ function renderAIStatus(aiStatus) {
 }
 
 // ===== Diff Rendering =====
-function renderDiff(diff, selectedFile, viewMode) {
+function renderDiff(diff, selectedFile, viewMode, comments = []) {
   const header = document.querySelector('.diff-header-title');
   const stats = document.getElementById('diff-stats');
   const viewer = document.getElementById('diff-viewer');
@@ -666,14 +857,18 @@ function renderDiff(diff, selectedFile, viewMode) {
   const allCollapsed = chunkStates.length > 0 && chunkStates.every(s => s.isCollapsed);
   diffCollapseAll.textContent = allCollapsed ? 'Expand' : 'Collapse';
 
+  // Filter comments for current file
+  const fileComments = (comments || []).filter(c => c.file === diff.file);
+
   let html = \`
     <table class="diff-table">
       <colgroup>
+        <col class="col-gutter">
         <col class="col-line-num">
         <col class="col-content">
       </colgroup>
   \`;
-  html += renderChunksToHtml(diff.chunks, chunkStates);
+  html += renderChunksToHtml(diff.chunks, chunkStates, fileComments);
   html += '</table>';
 
   viewer.innerHTML = html;
@@ -1363,7 +1558,17 @@ window.submitPreviewComment = function(startLine, endLine) {
   expandSidebar();
 };
 
-function renderChunksToHtml(chunks, chunkStates) {
+function renderChunksToHtml(chunks, chunkStates, comments = []) {
+  // Build comment lookup by line number
+  const commentsByLine = new Map();
+  comments.forEach(comment => {
+    const key = comment.line;
+    if (!commentsByLine.has(key)) {
+      commentsByLine.set(key, []);
+    }
+    commentsByLine.get(key).push(comment);
+  });
+
   let html = '';
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
@@ -1379,7 +1584,7 @@ function renderChunksToHtml(chunks, chunkStates) {
 
     html += \`
       <tr class="chunk-header-row" data-chunk-index="\${i}">
-        <td colspan="2" class="chunk-header">
+        <td colspan="3" class="chunk-header">
           <span class="chunk-toggle">▼</span>
           <span class="chunk-scope">\${escapeHtml(scopeLabel)}</span>
           <span class="chunk-stats">
@@ -1397,12 +1602,68 @@ function renderChunksToHtml(chunks, chunkStates) {
       const lineClass = line.type;
       const prefix = line.type === 'addition' ? '+' : line.type === 'deletion' ? '-' : ' ';
       const lineNum = line.newLineNumber || line.oldLineNumber || '';
+
+      // Check if this line has comments
+      const hasComments = commentsByLine.has(lineNum);
+      const lineComments = commentsByLine.get(lineNum) || [];
+      const hasPending = lineComments.some(c => !c.isSubmitted);
+      const markerClass = hasComments
+        ? (hasPending ? 'has-comment pending' : 'has-comment submitted')
+        : '';
+
       html += \`
         <tr class="diff-line \${lineClass}" data-line="\${lineNum}">
+          <td class="diff-gutter \${markerClass}" onclick="toggleInlineComment(\${lineNum})">
+            \${hasComments ? '<span class="comment-marker">●</span>' : ''}
+          </td>
           <td class="diff-line-num">\${lineNum}</td>
           <td class="diff-line-content" data-prefix="\${prefix}">\${escapeHtml(line.content)}</td>
         </tr>
       \`;
+
+      // Add inline comment row if this line has comments (collapsed by default)
+      if (hasComments) {
+        html += \`
+          <tr class="inline-comment-row collapsed" data-line="\${lineNum}">
+            <td colspan="3">
+              <div class="inline-comments">
+                \${lineComments.map(c => {
+                  const isPending = !c.isSubmitted;
+                  const statusClass = isPending ? 'pending' : 'submitted';
+                  return \`
+                    <div class="inline-comment-box \${statusClass}" data-comment-id="\${c.id}">
+                      <div class="inline-comment-header">
+                        <button class="fold-toggle" onclick="toggleCommentFold('\${c.id}')" title="Fold comment">
+                          <span class="fold-icon">▼</span>
+                        </button>
+                        <span class="comment-author">Comment</span>
+                        \${isPending ? \`
+                          <div class="inline-comment-actions">
+                            <button class="btn-icon" onclick="startInlineEdit('\${c.id}')" title="Edit">✎</button>
+                            <button class="btn-icon btn-danger" onclick="deleteComment('\${c.id}')" title="Delete">🗑</button>
+                          </div>
+                        \` : \`
+                          <span class="submitted-label">submitted</span>
+                        \`}
+                      </div>
+                      <div class="inline-comment-body" id="inline-body-\${c.id}">
+                        \${escapeHtml(c.text)}
+                      </div>
+                      <div class="inline-comment-edit" id="inline-edit-\${c.id}" style="display: none;">
+                        <textarea class="comment-textarea">\${escapeHtml(c.text)}</textarea>
+                        <div class="comment-form-actions">
+                          <button class="btn-secondary" onclick="cancelInlineEdit('\${c.id}')">Cancel</button>
+                          <button onclick="saveInlineEdit('\${c.id}')">Save</button>
+                        </div>
+                      </div>
+                    </div>
+                  \`;
+                }).join('')}
+              </div>
+            </td>
+          </tr>
+        \`;
+      }
     }
 
     html += '</tbody>';

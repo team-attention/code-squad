@@ -38,6 +38,19 @@ export class Comment {
         this._isSubmitted = true;
     }
 
+    withText(newText: string): Comment {
+        return new Comment({
+            id: this.id,
+            file: this.file,
+            line: this.line,
+            endLine: this.endLine,
+            text: newText,
+            codeContext: this.codeContext,
+            isSubmitted: this._isSubmitted,
+            timestamp: this.timestamp,
+        });
+    }
+
     get lineRange(): string {
         return this.endLine ? `${this.line}-${this.endLine}` : `${this.line}`;
     }

@@ -233,6 +233,19 @@ export class PanelStateManager implements IPanelStateManager {
         this.render();
     }
 
+    updateComment(comment: CommentInfo): void {
+        const index = this.state.comments.findIndex(c => c.id === comment.id);
+        if (index !== -1) {
+            const newComments = [...this.state.comments];
+            newComments[index] = comment;
+            this.state = {
+                ...this.state,
+                comments: newComments,
+            };
+            this.render();
+        }
+    }
+
     removeComment(id: string): void {
         this.state = {
             ...this.state,
@@ -258,6 +271,10 @@ export class PanelStateManager implements IPanelStateManager {
             ),
         };
         this.render();
+    }
+
+    findCommentById(id: string): CommentInfo | undefined {
+        return this.state.comments.find(c => c.id === id);
     }
 
     // ===== AI status =====

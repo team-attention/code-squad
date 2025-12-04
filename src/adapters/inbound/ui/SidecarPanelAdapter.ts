@@ -3,6 +3,8 @@ import * as path from 'path';
 import { PanelState, DiffDisplayState, ChunkDisplayInfo } from '../../../application/ports/outbound/PanelState';
 import { IGenerateDiffUseCase } from '../../../application/ports/inbound/IGenerateDiffUseCase';
 import { IAddCommentUseCase } from '../../../application/ports/inbound/IAddCommentUseCase';
+import { IEditCommentUseCase } from '../../../application/ports/inbound/IEditCommentUseCase';
+import { IDeleteCommentUseCase } from '../../../application/ports/inbound/IDeleteCommentUseCase';
 import { IPanelStateManager } from '../../../application/services/IPanelStateManager';
 import { ISymbolPort, ScopeInfo } from '../../../application/ports/outbound/ISymbolPort';
 import { DiffResult, DiffChunk } from '../../../domain/entities/Diff';
@@ -33,6 +35,8 @@ export class SidecarPanelAdapter {
     // Inbound handlers (webview → application)
     private generateDiffUseCase: IGenerateDiffUseCase | undefined;
     private addCommentUseCase: IAddCommentUseCase | undefined;
+    private editCommentUseCase: IEditCommentUseCase | undefined;
+    private deleteCommentUseCase: IDeleteCommentUseCase | undefined;
     private onSubmitComments: (() => Promise<void>) | undefined;
     private panelStateManager: IPanelStateManager | undefined;
     private symbolPort: ISymbolPort | undefined;
@@ -142,6 +146,15 @@ export class SidecarPanelAdapter {
                     case 'openFile':
                         await this.handleOpenFile(message.file);
                         break;
+                    case 'editComment':
+                        await this.handleEditComment(message.id, message.text);
+                        break;
+                    case 'deleteComment':
+                        await this.handleDeleteComment(message.id);
+                        break;
+                    case 'navigateToComment':
+                        await this.handleNavigateToComment(message.id);
+                        break;
                 }
             },
             null,
@@ -157,13 +170,17 @@ export class SidecarPanelAdapter {
         addCommentUseCase: IAddCommentUseCase,
         onSubmitComments: () => Promise<void>,
         panelStateManager?: IPanelStateManager,
-        symbolPort?: ISymbolPort
+        symbolPort?: ISymbolPort,
+        editCommentUseCase?: IEditCommentUseCase,
+        deleteCommentUseCase?: IDeleteCommentUseCase
     ): void {
         this.generateDiffUseCase = generateDiffUseCase;
         this.addCommentUseCase = addCommentUseCase;
         this.onSubmitComments = onSubmitComments;
         this.panelStateManager = panelStateManager;
         this.symbolPort = symbolPort;
+        this.editCommentUseCase = editCommentUseCase;
+        this.deleteCommentUseCase = deleteCommentUseCase;
     }
 
     /**
@@ -423,6 +440,50 @@ export class SidecarPanelAdapter {
         } catch (error) {
             console.error('[Sidecar] Failed to open file:', error);
         }
+    }
+
+    private async handleEditComment(id: string, text: string): Promise<void> {
+        if (!this.editCommentUseCase || !this.panelStateManager) return;
+
+        const updated = await this.editCommentUseCase.execute({ id, text });
+        if (updated) {
+            this.panelStateManager.updateComment({
+                id: updated.id,
+                file: updated.file,
+                line: updated.line,
+                endLine: updated.endLine,
+                text: updated.text,
+                isSubmitted: updated.isSubmitted,
+                codeContext: updated.codeContext,
+                timestamp: updated.timestamp,
+            });
+        }
+    }
+
+    private async handleDeleteComment(id: string): Promise<void> {
+        if (!this.deleteCommentUseCase || !this.panelStateManager) return;
+
+        const deleted = await this.deleteCommentUseCase.execute({ id });
+        if (deleted) {
+            this.panelStateManager.removeComment(id);
+        }
+    }
+
+    private async handleNavigateToComment(id: string): Promise<void> {
+        if (!this.panelStateManager) return;
+
+        const comment = this.panelStateManager.findCommentById(id);
+        if (!comment) return;
+
+        // Select the file to show its diff
+        await this.handleSelectFile(comment.file);
+
+        // Send scroll command to webview
+        this.panel.webview.postMessage({
+            type: 'scrollToLine',
+            line: comment.line,
+            commentId: id,
+        });
     }
 
     // ===== Render method =====
