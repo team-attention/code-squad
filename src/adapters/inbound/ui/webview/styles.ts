@@ -463,6 +463,44 @@ h3 {
   background: var(--vscode-editor-selectionBackground, rgba(173, 214, 255, 0.3));
 }
 
+/* Highlight target animation for preview blocks */
+.markdown-preview .diff-block.highlight-target {
+  animation: highlight-flash 2s ease-out;
+  background-color: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33)) !important;
+}
+
+.preview-comment-box.highlight-target {
+  animation: highlight-flash 2s ease-out;
+  box-shadow: 0 0 0 2px var(--vscode-focusBorder, #007fd4);
+}
+
+/* Comment range indicator - shows which blocks have comments */
+.markdown-preview .diff-block.has-comment {
+  position: relative;
+}
+
+.comment-gutter-indicators {
+  position: absolute;
+  left: -16px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  gap: 2px;
+}
+
+.comment-gutter-bar {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.comment-gutter-bar.color-0 { background: #58a6ff; }
+.comment-gutter-bar.color-1 { background: #f78166; }
+.comment-gutter-bar.color-2 { background: #7ee787; }
+.comment-gutter-bar.color-3 { background: #d2a8ff; }
+.comment-gutter-bar.color-4 { background: #ffa657; }
+.comment-gutter-bar.color-5 { background: #ff7b72; }
+
 .markdown-preview .diff-deletion {
   background: var(--vscode-diffEditor-removedLineBackground, rgba(248, 81, 73, 0.15));
   border-left: 3px solid var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
@@ -614,6 +652,93 @@ h3 {
   background: var(--vscode-editorOverviewRuler-deletedForeground, #f85149);
 }
 
+.overview-marker.comment {
+  background: var(--vscode-textLink-foreground, #58a6ff);
+}
+
+/* Preview inline comments */
+.preview-inline-comments {
+  margin: 8px 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.preview-comment-box {
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  margin-bottom: 6px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.preview-comment-box.color-0 { border-left: 3px solid #58a6ff; }
+.preview-comment-box.color-1 { border-left: 3px solid #f78166; }
+.preview-comment-box.color-2 { border-left: 3px solid #7ee787; }
+.preview-comment-box.color-3 { border-left: 3px solid #d2a8ff; }
+.preview-comment-box.color-4 { border-left: 3px solid #ffa657; }
+.preview-comment-box.color-5 { border-left: 3px solid #ff7b72; }
+
+.preview-comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--vscode-titleBar-activeBackground, rgba(255, 255, 255, 0.05));
+  border-bottom: 1px solid var(--vscode-panel-border);
+  font-size: 11px !important;
+  line-height: 1.4 !important;
+  margin: 0;
+}
+
+.preview-comment-header .comment-location {
+  color: var(--vscode-descriptionForeground);
+  font-weight: 600;
+}
+
+.preview-comment-body {
+  padding: 12px;
+  font-size: 12px !important;
+  line-height: normal !important;
+  white-space: pre-line;
+  word-break: break-word;
+  text-align: left;
+  margin: 0;
+  display: block;
+}
+
+.preview-comment-edit {
+  padding: 12px;
+  background: var(--vscode-input-background);
+}
+
+.preview-comment-edit textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 8px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.preview-comment-edit textarea:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
+.preview-comment-box.submitted {
+  opacity: 0.7;
+}
+
+.preview-comment-box.submitted .preview-comment-header {
+  background: var(--vscode-editor-background);
+}
+
 .comment-item {
   padding: 10px;
   margin: 6px 0;
@@ -623,6 +748,13 @@ h3 {
   font-size: 12px;
   position: relative;
 }
+
+.comment-item.color-0 { border-left-color: #58a6ff; }
+.comment-item.color-1 { border-left-color: #f78166; }
+.comment-item.color-2 { border-left-color: #7ee787; }
+.comment-item.color-3 { border-left-color: #d2a8ff; }
+.comment-item.color-4 { border-left-color: #ffa657; }
+.comment-item.color-5 { border-left-color: #ff7b72; }
 
 .comment-item.submitted {
   opacity: 0.7;
@@ -1398,12 +1530,17 @@ button:hover {
   background: var(--vscode-editor-background);
 }
 
+.inline-comment-row td {
+  text-align: left;
+  padding: 0;
+}
+
 .inline-comment-row.collapsed {
   display: none;
 }
 
 .inline-comments {
-  padding: 8px 8px 8px 28px;
+  padding: 8px;
   border-left: 3px solid var(--vscode-textLink-foreground);
   margin: 4px 0;
 }
@@ -1457,6 +1594,7 @@ button:hover {
   line-height: 1.4;
   white-space: pre-wrap;
   word-wrap: break-word;
+  text-align: left;
 }
 
 

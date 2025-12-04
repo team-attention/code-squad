@@ -11,6 +11,7 @@ let selectionEndRow = null;
 let isSelecting = false;
 let isResizing = false;
 let sidebarWidth = 320;
+let pendingScrollRestore = null;
 
 // ===== DOM references =====
 const bodyEl = document.body;
@@ -294,11 +295,35 @@ window.addEventListener('message', event => {
   }
 });
 
+// Get the actual scrollable element (differs between diff table and preview mode)
+function getScrollableElement() {
+  const preview = document.querySelector('.markdown-preview');
+  if (preview) return preview;
+  return document.getElementById('diff-viewer');
+}
+
 function renderState(state) {
+  // Capture current scroll position if we should preserve it
+  const shouldRestoreScroll = pendingScrollRestore !== null;
+  const scrollToRestore = shouldRestoreScroll ? pendingScrollRestore : 0;
+  pendingScrollRestore = null;
+
   renderFileList(state.sessionFiles, state.uncommittedFiles, state.showUncommitted, state.selectedFile, state.isTreeView, state.searchQuery, state.diff);
   renderComments(state.comments);
   renderAIStatus(state.aiStatus);
   renderDiff(state.diff, state.selectedFile, state.diffViewMode, state.comments);
+
+  // Restore scroll position after render
+  if (shouldRestoreScroll && scrollToRestore > 0) {
+    // Use multiple attempts to ensure scroll is restored after layout settles
+    const restoreScroll = () => {
+      const scrollEl = getScrollableElement();
+      if (scrollEl) scrollEl.scrollTop = scrollToRestore;
+    };
+    setTimeout(restoreScroll, 0);
+    setTimeout(restoreScroll, 50);
+    setTimeout(restoreScroll, 100);
+  }
 }
 
 // ===== File List Rendering =====
@@ -559,6 +584,12 @@ function renderComments(comments) {
     return;
   }
 
+  // Build color map for all comments
+  const commentColorMap = new Map();
+  comments.forEach((comment, idx) => {
+    commentColorMap.set(comment.id, idx % 6);
+  });
+
   // Separate pending and submitted
   const pending = comments.filter(c => !c.isSubmitted);
   const submitted = comments.filter(c => c.isSubmitted);
@@ -571,9 +602,10 @@ function renderComments(comments) {
     const lineDisplay = comment.endLine
       ? \`\${comment.line}-\${comment.endLine}\`
       : comment.line;
+    const colorIndex = commentColorMap.get(comment.id);
 
     html += \`
-      <div class="comment-item" data-id="\${comment.id}">
+      <div class="comment-item color-\${colorIndex}" data-id="\${comment.id}">
         <div class="comment-header">
           <span class="comment-location" onclick="navigateToComment('\${comment.id}')" title="\${comment.file}:\${lineDisplay}">
             📝 \${comment.file}:\${lineDisplay}
@@ -645,13 +677,22 @@ function saveEditComment(id) {
   const textarea = document.querySelector('#comment-edit-' + id + ' textarea');
   const text = textarea.value.trim();
   if (text) {
+    saveScrollPosition();
     vscode.postMessage({ type: 'editComment', id, text });
   }
   cancelEditComment(id);
 }
 
 function deleteComment(id) {
+  saveScrollPosition();
   vscode.postMessage({ type: 'deleteComment', id });
+}
+
+function saveScrollPosition() {
+  const scrollEl = getScrollableElement();
+  if (scrollEl) {
+    pendingScrollRestore = scrollEl.scrollTop;
+  }
 }
 
 function toggleSubmittedHistory() {
@@ -716,6 +757,7 @@ function saveInlineEdit(commentId) {
   const textarea = document.querySelector('#inline-edit-' + commentId + ' textarea');
   const text = textarea.value.trim();
   if (text) {
+    saveScrollPosition();
     vscode.postMessage({ type: 'editComment', id: commentId, text });
   }
   cancelInlineEdit(commentId);
@@ -733,7 +775,50 @@ function scrollToLineInDiff(startLine, endLine, commentId) {
   const diffContainer = document.getElementById('diff-viewer');
   if (!diffContainer) return;
 
-  // Find all rows in the range and expand collapsed chunks
+  // Check if we're in preview mode
+  const previewContainer = diffContainer.querySelector('.markdown-preview');
+  if (previewContainer) {
+    // Preview mode: find diff-block elements that contain the target lines
+    const blocks = previewContainer.querySelectorAll('.diff-block[data-start-line]');
+    const targetBlocks = [];
+
+    blocks.forEach(block => {
+      const blockStart = parseInt(block.dataset.startLine);
+      const blockEnd = parseInt(block.dataset.endLine);
+      // Check if this block overlaps with our target range
+      if (blockStart <= actualEndLine && blockEnd >= startLine) {
+        targetBlocks.push(block);
+      }
+    });
+
+    if (targetBlocks.length > 0) {
+      setTimeout(() => {
+        targetBlocks[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // Highlight blocks in range
+        targetBlocks.forEach(block => block.classList.add('highlight-target'));
+
+        setTimeout(() => {
+          targetBlocks.forEach(block => block.classList.remove('highlight-target'));
+        }, 2000);
+      }, 100);
+    }
+
+    // Also scroll to the comment box if it exists
+    if (commentId) {
+      setTimeout(() => {
+        const commentBox = diffContainer.querySelector('.preview-comment-box[data-comment-id="' + commentId + '"]');
+        if (commentBox) {
+          commentBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          commentBox.classList.add('highlight-target');
+          setTimeout(() => commentBox.classList.remove('highlight-target'), 2000);
+        }
+      }, 200);
+    }
+    return;
+  }
+
+  // Diff table mode: find all rows in the range and expand collapsed chunks
   const chunkBodies = diffContainer.querySelectorAll('tbody.chunk-lines');
   const targetRows = [];
 
@@ -843,8 +928,12 @@ function renderDiff(diff, selectedFile, viewMode, comments = []) {
     \`;
 
     if (viewMode === 'preview') {
-      renderMarkdownPreview(diff, viewer);
+      // Filter comments for current file
+      const fileComments = (comments || []).filter(c => c.file === diff.file);
+      renderMarkdownPreview(diff, viewer, fileComments);
       setupPreviewCommentHandlers(diff.file);
+      // Trigger search highlighting for markdown preview
+      onFileChange();
       return;
     }
   } else {
@@ -1268,9 +1357,9 @@ function processInline(text) {
   return result;
 }
 
-function renderMarkdownPreview(diff, container) {
+function renderMarkdownPreview(diff, container, comments = []) {
   if (diff.newFileContent) {
-    renderFullMarkdownWithHighlights(diff.newFileContent, diff.changedLineNumbers, container, diff.deletions);
+    renderFullMarkdownWithHighlights(diff.newFileContent, diff.changedLineNumbers, container, diff.deletions, comments);
     return;
   }
 
@@ -1304,7 +1393,7 @@ function renderMarkdownPreview(diff, container) {
   container.innerHTML = html;
 }
 
-function renderFullMarkdownWithHighlights(content, changedLineNumbers, container, deletions) {
+function renderFullMarkdownWithHighlights(content, changedLineNumbers, container, deletions, comments = []) {
   const lines = content.split('\\n');
   const totalLines = lines.length;
   const changedSet = new Set(changedLineNumbers || []);
@@ -1315,6 +1404,24 @@ function renderFullMarkdownWithHighlights(content, changedLineNumbers, container
       deletionMap.set(del.afterLine, del.content);
     }
   }
+
+  // Build comment lookup by line number
+  const commentColorMap = new Map();
+  comments.forEach((comment, idx) => {
+    commentColorMap.set(comment.id, idx % 6);
+  });
+
+  const commentsByLine = new Map();
+  comments.forEach(comment => {
+    const startLine = comment.line;
+    const endLine = comment.endLine || comment.line;
+    for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
+      if (!commentsByLine.has(lineNum)) {
+        commentsByLine.set(lineNum, []);
+      }
+      commentsByLine.get(lineNum).push({ ...comment, colorIndex: commentColorMap.get(comment.id) });
+    }
+  });
 
   const groups = [];
   let currentGroup = null;
@@ -1363,12 +1470,78 @@ function renderFullMarkdownWithHighlights(content, changedLineNumbers, container
     const rendered = renderMarkdown(groupContent);
     const endLine = group.startLine + group.lines.length - 1;
 
+    // Collect all unique comment color indices for this block
+    const blockCommentColors = new Set();
+    for (let lineNum = group.startLine; lineNum <= endLine; lineNum++) {
+      if (commentsByLine.has(lineNum)) {
+        const lineComments = commentsByLine.get(lineNum);
+        lineComments.forEach(c => blockCommentColors.add(c.colorIndex));
+      }
+    }
+
+    // Check if this group has any comments that END on its last line
+    const groupComments = commentsByLine.has(endLine)
+      ? commentsByLine.get(endLine).filter(c => (c.endLine || c.line) === endLine)
+      : [];
+
+    const hasComment = blockCommentColors.size > 0;
+    const commentClass = hasComment ? ' has-comment' : '';
+
+    // Build gutter indicator bars for each comment on this block
+    let gutterHtml = '';
+    if (hasComment) {
+      gutterHtml = '<div class="comment-gutter-indicators">';
+      Array.from(blockCommentColors).forEach(colorIdx => {
+        gutterHtml += '<div class="comment-gutter-bar color-' + colorIdx + '"></div>';
+      });
+      gutterHtml += '</div>';
+    }
+
+    let blockHtml = '';
     if (group.type === 'addition') {
-      markdownHtml += '<div class="diff-block diff-addition" data-start-line="' + group.startLine + '" data-end-line="' + endLine + '">' + rendered + '</div>';
+      blockHtml = '<div class="diff-block diff-addition' + commentClass + '" data-start-line="' + group.startLine + '" data-end-line="' + endLine + '">' + gutterHtml + rendered + '</div>';
     } else if (group.type === 'deletion') {
-      markdownHtml += '<div class="diff-block diff-deletion" data-after-line="' + group.startLine + '">' + rendered + '</div>';
+      blockHtml = '<div class="diff-block diff-deletion" data-after-line="' + group.startLine + '">' + rendered + '</div>';
     } else {
-      markdownHtml += '<div class="diff-block diff-normal" data-start-line="' + group.startLine + '" data-end-line="' + endLine + '">' + rendered + '</div>';
+      blockHtml = '<div class="diff-block diff-normal' + commentClass + '" data-start-line="' + group.startLine + '" data-end-line="' + endLine + '">' + gutterHtml + rendered + '</div>';
+    }
+
+    markdownHtml += blockHtml;
+
+    // Add inline comments after the block if this group ends with comments
+    if (groupComments.length > 0 && group.type !== 'deletion') {
+      markdownHtml += '<div class="preview-inline-comments" data-line="' + endLine + '">';
+      groupComments.forEach(c => {
+        const isPending = !c.isSubmitted;
+        const statusClass = isPending ? 'pending' : 'submitted';
+        const lineDisplay = c.line === (c.endLine || c.line)
+          ? 'Line ' + c.line
+          : 'Lines ' + c.line + '-' + (c.endLine || c.line);
+        markdownHtml += \`
+          <div class="preview-comment-box \${statusClass} color-\${c.colorIndex}" data-comment-id="\${c.id}">
+            <div class="preview-comment-header">
+              <span class="comment-location">\${lineDisplay}</span>
+              \${isPending ? \`
+                <div class="inline-comment-actions">
+                  <button class="btn-icon" onclick="startPreviewCommentEdit('\${c.id}')" title="Edit">✎</button>
+                  <button class="btn-icon btn-danger" onclick="deleteComment('\${c.id}')" title="Delete">🗑</button>
+                </div>
+              \` : \`
+                <span class="submitted-label">submitted</span>
+              \`}
+            </div>
+            <div class="preview-comment-body" id="preview-body-\${c.id}">\${escapeHtml(c.text)}</div>
+            <div class="preview-comment-edit" id="preview-edit-\${c.id}" style="display: none;">
+              <textarea class="comment-textarea">\${escapeHtml(c.text)}</textarea>
+              <div class="comment-form-actions">
+                <button class="btn-secondary" onclick="cancelPreviewCommentEdit('\${c.id}')">Cancel</button>
+                <button onclick="savePreviewCommentEdit('\${c.id}')">Save</button>
+              </div>
+            </div>
+          </div>
+        \`;
+      });
+      markdownHtml += '</div>';
     }
   }
 
@@ -1385,6 +1558,13 @@ function renderFullMarkdownWithHighlights(content, changedLineNumbers, container
     const topPercent = (afterLine / totalLines) * 100;
     markersHtml += '<div class="overview-marker deletion" style="top: ' + topPercent.toFixed(2) + '%;"></div>';
   }
+
+  // Add comment markers to overview ruler
+  comments.forEach(c => {
+    const endLine = c.endLine || c.line;
+    const topPercent = ((endLine - 1) / totalLines) * 100;
+    markersHtml += '<div class="overview-marker comment" style="top: ' + topPercent.toFixed(2) + '%;"></div>';
+  });
 
   container.innerHTML =
     '<div class="markdown-preview-container">' +
@@ -1535,6 +1715,8 @@ window.submitPreviewComment = function(startLine, endLine) {
   const text = form.querySelector('textarea').value;
   if (!text.trim()) return;
 
+  saveScrollPosition();
+
   vscode.postMessage({
     type: 'addComment',
     file: previewCurrentFile,
@@ -1547,6 +1729,28 @@ window.submitPreviewComment = function(startLine, endLine) {
   form.remove();
   clearPreviewSelection();
   expandSidebar();
+};
+
+// ===== Preview Comment Edit Functions =====
+window.startPreviewCommentEdit = function(commentId) {
+  document.getElementById('preview-body-' + commentId).style.display = 'none';
+  document.getElementById('preview-edit-' + commentId).style.display = 'block';
+  document.querySelector('#preview-edit-' + commentId + ' textarea').focus();
+};
+
+window.cancelPreviewCommentEdit = function(commentId) {
+  document.getElementById('preview-body-' + commentId).style.display = 'block';
+  document.getElementById('preview-edit-' + commentId).style.display = 'none';
+};
+
+window.savePreviewCommentEdit = function(commentId) {
+  const textarea = document.querySelector('#preview-edit-' + commentId + ' textarea');
+  const text = textarea.value.trim();
+  if (text) {
+    saveScrollPosition();
+    vscode.postMessage({ type: 'editComment', id: commentId, text });
+  }
+  cancelPreviewCommentEdit(commentId);
 };
 
 function renderChunksToHtml(chunks, chunkStates, comments = []) {
@@ -1642,7 +1846,7 @@ function renderChunksToHtml(chunks, chunkStates, comments = []) {
       // Add inline comment row only for comments that START on this line
       if (primaryComments.length > 0) {
         html += \`
-          <tr class="inline-comment-row collapsed" data-line="\${lineNum}">
+          <tr class="inline-comment-row" data-line="\${lineNum}">
             <td colspan="3">
               <div class="inline-comments">
                 \${primaryComments.map(c => {
@@ -1854,6 +2058,8 @@ window.submitInlineComment = function() {
   const currentFile = formRow.dataset.file;
 
   if (text && currentFile) {
+    saveScrollPosition();
+
     vscode.postMessage({
       type: 'addComment',
       file: currentFile,
