@@ -58,7 +58,7 @@ Changes grouped by function, class, or module. See the intent, not just the diff
 
 <table>
   <tr>
-    <td align="center"><a href="https://claude.ai/code"><strong>Claude Code</strong></a><br/>Anthropic</td>
+    <td align="center"><a href="https://github.com/anthropics/claude-code"><strong>Claude Code</strong></a><br/>Anthropic</td>
     <td align="center"><a href="https://github.com/openai/codex"><strong>Codex CLI</strong></a><br/>OpenAI</td>
     <td align="center"><a href="https://github.com/google-gemini/gemini-cli"><strong>Gemini CLI</strong></a><br/>Google</td>
   </tr>
@@ -95,7 +95,7 @@ VS Code 1.93.0+
 
 ## Links
 
-[GitHub](https://github.com/eatnug/sidecar) · [Issues](https://github.com/eatnug/sidecar/issues) · [Changelog](https://github.com/eatnug/sidecar/releases)
+[GitHub](https://github.com/team-attention/sidecar) · [Issues](https://github.com/team-attention/sidecar/issues) · [Changelog](https://github.com/team-attention/sidecar/releases)
 
 ---
 
