@@ -2,13 +2,14 @@
   "name": "sidecar",
   "displayName": "Sidecar",
   "description": "Real-time code review interface for AI coding assistants",
-  "version": "0.0.32",
+  "version": "0.0.33",
   "publisher": "JakePark",
   "repository": {
     "type": "git",
     "url": "https://github.com/team-attention/sidecar.git"
   },
   "license": "MIT",
+  "icon": "assets/sidecar-icon.png",
   "engines": {
     "vscode": "^1.93.0"
   },
