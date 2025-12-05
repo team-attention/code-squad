@@ -5,6 +5,7 @@ import {
     AIStatus,
     DiffDisplayState,
     DiffViewMode,
+    DraftComment,
     createInitialPanelState,
 } from '../ports/outbound/PanelState';
 import { IPanelStateManager } from './IPanelStateManager';
@@ -323,6 +324,43 @@ export class PanelStateManager implements IPanelStateManager {
 
     clearSearch(): void {
         this.setSearchQuery('');
+    }
+
+    // ===== Draft comment operations =====
+
+    setDraftComment(draft: DraftComment | null): void {
+        this.state = {
+            ...this.state,
+            draftComment: draft,
+        };
+        // Don't call render - draft comment is updated silently
+    }
+
+    clearDraftComment(): void {
+        if (this.state.draftComment !== null) {
+            this.state = {
+                ...this.state,
+                draftComment: null,
+            };
+            this.render();
+        }
+    }
+
+    // ===== Scroll position operations =====
+
+    setFileScrollPosition(filePath: string, scrollTop: number): void {
+        this.state = {
+            ...this.state,
+            fileScrollPositions: {
+                ...this.state.fileScrollPositions,
+                [filePath]: scrollTop,
+            },
+        };
+        // Don't call render - scroll position is updated silently
+    }
+
+    getFileScrollPosition(filePath: string): number {
+        return this.state.fileScrollPositions[filePath] || 0;
     }
 
     // ===== Reset =====

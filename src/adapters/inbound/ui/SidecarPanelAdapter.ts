@@ -158,6 +158,17 @@ export class SidecarPanelAdapter {
                     case 'navigateToComment':
                         await this.handleNavigateToComment(message.id);
                         break;
+                    case 'saveDraftComment':
+                        this.panelStateManager?.setDraftComment(message.draft);
+                        break;
+                    case 'clearDraftComment':
+                        this.panelStateManager?.clearDraftComment();
+                        break;
+                    case 'saveScrollPosition':
+                        if (message.file && message.scrollTop !== undefined) {
+                            this.panelStateManager?.setFileScrollPosition(message.file, message.scrollTop);
+                        }
+                        break;
                 }
             },
             null,

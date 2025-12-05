@@ -1,4 +1,4 @@
-import { PanelState, FileInfo, CommentInfo, AIStatus, DiffDisplayState, DiffViewMode } from '../ports/outbound/PanelState';
+import { PanelState, FileInfo, CommentInfo, AIStatus, DiffDisplayState, DiffViewMode, DraftComment } from '../ports/outbound/PanelState';
 
 /**
  * Panel state manager - manages UI state and triggers rendering
@@ -51,6 +51,14 @@ export interface IPanelStateManager {
 
     // Search operations
     setSearchQuery(query: string): void;
+
+    // Draft comment operations
+    setDraftComment(draft: DraftComment | null): void;
+    clearDraftComment(): void;
+
+    // Scroll position operations
+    setFileScrollPosition(filePath: string, scrollTop: number): void;
+    getFileScrollPosition(filePath: string): number;
 
     // Reset state (e.g., when panel closes)
     reset(): void;

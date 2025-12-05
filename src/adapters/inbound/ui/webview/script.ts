@@ -13,6 +13,7 @@ let isResizing = false;
 let sidebarWidth = 320;
 let pendingScrollRestore = null;
 let collapsedFolders = new Set();
+let currentFile = null;  // Track current file for scroll position saving
 
 // ===== DOM references =====
 const bodyEl = document.body;
@@ -304,10 +305,47 @@ function getScrollableElement() {
 }
 
 function renderState(state) {
-  // Capture current scroll position if we should preserve it
-  const shouldRestoreScroll = pendingScrollRestore !== null;
-  const scrollToRestore = shouldRestoreScroll ? pendingScrollRestore : 0;
-  pendingScrollRestore = null;
+  // Check if we're switching files
+  const previousFile = currentFile;
+  const newFile = state.selectedFile;
+  const isFileSwitching = previousFile !== newFile && previousFile !== null && newFile !== null;
+
+  // Save scroll position of current file before rendering new file
+  if (isFileSwitching && previousFile) {
+    const scrollEl = getScrollableElement();
+    if (scrollEl && scrollEl.scrollTop > 0) {
+      vscode.postMessage({ type: 'saveScrollPosition', file: previousFile, scrollTop: scrollEl.scrollTop });
+    }
+    // Save draft comment before switching files (if not already saved for same file)
+    const existingForm = document.querySelector('.comment-form-row');
+    if (existingForm) {
+      const textarea = existingForm.querySelector('textarea');
+      const text = textarea ? textarea.value : '';
+      const startLine = existingForm.dataset.start;
+      const endLine = existingForm.dataset.end;
+      const formFile = existingForm.dataset.file;
+      if (text && formFile) {
+        vscode.postMessage({
+          type: 'saveDraftComment',
+          draft: { file: formFile, startLine: parseInt(startLine), endLine: parseInt(endLine), text }
+        });
+      }
+    }
+  }
+
+  // Determine scroll position to restore
+  let scrollToRestore = 0;
+  if (pendingScrollRestore !== null) {
+    // Explicit scroll restore (from comment operations)
+    scrollToRestore = pendingScrollRestore;
+    pendingScrollRestore = null;
+  } else if (isFileSwitching && newFile && state.fileScrollPositions && state.fileScrollPositions[newFile]) {
+    // Restore saved scroll position for new file
+    scrollToRestore = state.fileScrollPositions[newFile];
+  }
+
+  // Update current file tracker
+  currentFile = newFile;
 
   renderFileList(state.sessionFiles, state.uncommittedFiles, state.showUncommitted, state.selectedFile, state.isTreeView, state.searchQuery, state.diff);
   renderComments(state.comments);
@@ -315,8 +353,7 @@ function renderState(state) {
   renderDiff(state.diff, state.selectedFile, state.diffViewMode, state.comments);
 
   // Restore scroll position after render
-  if (shouldRestoreScroll && scrollToRestore > 0) {
-    // Use multiple attempts to ensure scroll is restored after layout settles
+  if (scrollToRestore > 0) {
     const restoreScroll = () => {
       const scrollEl = getScrollableElement();
       if (scrollEl) scrollEl.scrollTop = scrollToRestore;
@@ -324,6 +361,11 @@ function renderState(state) {
     setTimeout(restoreScroll, 0);
     setTimeout(restoreScroll, 50);
     setTimeout(restoreScroll, 100);
+  }
+
+  // Restore draft comment form if exists
+  if (state.draftComment && state.draftComment.file === newFile) {
+    restoreDraftCommentForm(state.draftComment);
   }
 }
 
@@ -1989,9 +2031,18 @@ function updateLineSelection() {
   }
 }
 
-function showInlineCommentForm(currentFile, startLine, endLine) {
+function showInlineCommentForm(currentFile, startLine, endLine, existingText = '') {
   const existingForm = document.querySelector('.comment-form-row');
-  if (existingForm) existingForm.remove();
+  // Save current draft before removing existing form (to persist across line changes)
+  if (existingForm) {
+    const existingTextarea = existingForm.querySelector('textarea');
+    const text = existingTextarea ? existingTextarea.value : '';
+    if (text && !existingText) {
+      // Preserve existing text when switching lines
+      existingText = text;
+    }
+    existingForm.remove();
+  }
   if (!selectedLineElement) return;
 
   const isSingleLine = !endLine || startLine === endLine;
@@ -1999,16 +2050,19 @@ function showInlineCommentForm(currentFile, startLine, endLine) {
     ? \`line \${startLine || selectedLineNum}\`
     : \`lines \${startLine}-\${endLine}\`;
 
+  const actualStartLine = startLine || selectedLineNum;
+  const actualEndLine = endLine || startLine || selectedLineNum;
+
   const formRow = document.createElement('tr');
   formRow.className = 'comment-form-row';
   formRow.dataset.file = currentFile;
-  formRow.dataset.start = startLine || selectedLineNum;
-  formRow.dataset.end = endLine || startLine || selectedLineNum;
+  formRow.dataset.start = actualStartLine;
+  formRow.dataset.end = actualEndLine;
   formRow.innerHTML = \`
     <td colspan="3">
       <div class="inline-comment-form active">
         <div class="comment-form-header">Comment on \${lineDisplay}</div>
-        <textarea class="comment-textarea" placeholder="Leave a comment..."></textarea>
+        <textarea class="comment-textarea" placeholder="Leave a comment...">\${escapeHtml(existingText)}</textarea>
         <div class="comment-form-actions">
           <button class="btn-secondary" onclick="cancelCommentForm()">Cancel</button>
           <button onclick="submitInlineComment()">Add Comment</button>
@@ -2017,7 +2071,58 @@ function showInlineCommentForm(currentFile, startLine, endLine) {
     </td>
   \`;
   selectedLineElement.after(formRow);
-  formRow.querySelector('textarea').focus();
+
+  const textarea = formRow.querySelector('textarea');
+  textarea.focus();
+  // Move cursor to end of text
+  textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+
+  // Save draft on input
+  textarea.addEventListener('input', () => {
+    saveDraftComment(currentFile, actualStartLine, actualEndLine, textarea.value);
+  });
+
+  // Also save initial draft if there's existing text
+  if (existingText) {
+    saveDraftComment(currentFile, actualStartLine, actualEndLine, existingText);
+  }
+}
+
+// Save draft comment to extension state
+function saveDraftComment(file, startLine, endLine, text) {
+  if (text.trim()) {
+    vscode.postMessage({
+      type: 'saveDraftComment',
+      draft: { file, startLine: parseInt(startLine), endLine: parseInt(endLine), text }
+    });
+  } else {
+    vscode.postMessage({ type: 'clearDraftComment' });
+  }
+}
+
+// Restore draft comment form from state
+function restoreDraftCommentForm(draft) {
+  if (!draft) return;
+
+  // Find the target line element
+  const targetRow = document.querySelector(\`.diff-line[data-line="\${draft.endLine}"]\`);
+  if (!targetRow) return;
+
+  // Check if form already exists with same content
+  const existingForm = document.querySelector('.comment-form-row');
+  if (existingForm) {
+    const existingText = existingForm.querySelector('textarea')?.value;
+    if (existingText === draft.text) return;
+  }
+
+  // Set up selection state
+  selectedLineNum = draft.startLine;
+  selectedLineElement = targetRow;
+  selectionStartLine = draft.startLine;
+  selectionEndLine = draft.endLine;
+
+  // Show form with draft text
+  showInlineCommentForm(draft.file, draft.startLine, draft.endLine, draft.text);
 }
 
 window.cancelCommentForm = function() {
@@ -2026,6 +2131,8 @@ window.cancelCommentForm = function() {
   if (formRow) formRow.remove();
   selectionStartLine = null;
   selectionEndLine = null;
+  // Clear draft on explicit cancel
+  vscode.postMessage({ type: 'clearDraftComment' });
 };
 
 window.submitInlineComment = function() {
@@ -2053,6 +2160,8 @@ window.submitInlineComment = function() {
     selectionStartLine = null;
     selectionEndLine = null;
     expandSidebar();
+    // Clear draft on submit
+    vscode.postMessage({ type: 'clearDraftComment' });
   }
 };
 

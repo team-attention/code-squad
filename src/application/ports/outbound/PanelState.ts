@@ -71,6 +71,23 @@ export interface AIStatus {
 }
 
 /**
+ * Draft comment being edited (not yet submitted)
+ */
+export interface DraftComment {
+    file: string;
+    startLine: number;
+    endLine: number;
+    text: string;
+}
+
+/**
+ * Per-file scroll position storage
+ */
+export interface FileScrollPositions {
+    [filePath: string]: number;
+}
+
+/**
  * Complete panel state - single source of truth for UI
  */
 export interface PanelState {
@@ -84,6 +101,8 @@ export interface PanelState {
     isTreeView: boolean;
     diffViewMode: DiffViewMode;
     searchQuery: string;
+    draftComment: DraftComment | null;
+    fileScrollPositions: FileScrollPositions;
 }
 
 /**
@@ -101,5 +120,7 @@ export function createInitialPanelState(): PanelState {
         isTreeView: true,
         diffViewMode: 'diff',
         searchQuery: '',
+        draftComment: null,
+        fileScrollPositions: {},
     };
 }
