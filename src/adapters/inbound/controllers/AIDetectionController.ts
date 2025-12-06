@@ -24,6 +24,24 @@ import { SidecarPanelAdapter } from '../ui/SidecarPanelAdapter';
 export class AIDetectionController {
     /** 터미널별 독립 세션 컨텍스트 */
     private sessions = new Map<string, SessionContext>();
+    private debugChannel: vscode.OutputChannel | undefined;
+
+    private log(message: string): void {
+        if (!this.debugChannel) return;
+        const timestamp = new Date().toISOString().substring(11, 23);
+        const memUsage = process.memoryUsage();
+        const heapMB = (memUsage.heapUsed / 1024 / 1024).toFixed(1);
+        this.debugChannel.appendLine(`[Sidecar:AI] [${timestamp}] [heap=${heapMB}MB] ${message}`);
+    }
+
+    private logError(context: string, error: unknown): void {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : '';
+        this.log(`❌ ERROR [${context}]: ${errorMsg}`);
+        if (stack) {
+            this.log(`  Stack: ${stack.split('\n').slice(0, 5).join('\n  ')}`);
+        }
+    }
 
     constructor(
         private readonly fileSystemGateway: IFileSystemPort,
@@ -38,23 +56,41 @@ export class AIDetectionController {
     ) {}
 
     activate(context: vscode.ExtensionContext): void {
+        this.debugChannel = vscode.window.createOutputChannel('Sidecar AI Detection');
+        context.subscriptions.push(this.debugChannel);
+
+        this.log('🚀 AIDetectionController activated');
+
         context.subscriptions.push(
             vscode.window.onDidStartTerminalShellExecution(event => {
+                this.log(`🔵 Terminal command started: ${event.execution.commandLine.value.substring(0, 50)}...`);
                 this.handleCommandStart(event);
             })
         );
 
         context.subscriptions.push(
             vscode.window.onDidEndTerminalShellExecution(event => {
+                this.log(`🔴 Terminal command ended: ${event.execution.commandLine.value.substring(0, 50)}...`);
                 this.handleCommandEnd(event);
             })
         );
 
         context.subscriptions.push(
             vscode.window.onDidCloseTerminal(terminal => {
+                this.log(`⚫ Terminal closed: ${terminal.name}`);
                 this.handleTerminalClose(terminal);
             })
         );
+
+        // Periodic health check
+        const healthCheckInterval = setInterval(() => {
+            const memUsage = process.memoryUsage();
+            const heapMB = (memUsage.heapUsed / 1024 / 1024).toFixed(1);
+            const rssMB = (memUsage.rss / 1024 / 1024).toFixed(1);
+            this.log(`💓 Health: sessions=${this.sessions.size}, heap=${heapMB}MB, rss=${rssMB}MB`);
+        }, 30000);
+
+        context.subscriptions.push({ dispose: () => clearInterval(healthCheckInterval) });
     }
 
     private async handleCommandStart(
@@ -67,21 +103,22 @@ export class AIDetectionController {
 
             // Skip if already have an active session for this terminal
             if (this.sessions.has(terminalId)) {
+                this.log(`  Skip: session already exists for ${terminalId}`);
                 return;
             }
 
             if (this.isClaudeCommand(commandLine)) {
-                console.log('[Sidecar] Claude Code detected!');
+                this.log('🤖 Claude Code detected!');
                 await this.activateSidecar('claude', terminal);
             } else if (this.isCodexCommand(commandLine)) {
-                console.log('[Sidecar] Codex detected!');
+                this.log('🤖 Codex detected!');
                 await this.activateSidecar('codex', terminal);
             } else if (this.isGeminiCommand(commandLine)) {
-                console.log('[Sidecar] Gemini CLI detected!');
+                this.log('🤖 Gemini CLI detected!');
                 await this.activateSidecar('gemini', terminal);
             }
         } catch (error) {
-            console.error('[Sidecar] Error in handleCommandStart:', error);
+            this.logError('handleCommandStart', error);
         }
     }
 
@@ -113,12 +150,16 @@ export class AIDetectionController {
     }
 
     private async activateSidecar(type: AIType, terminal: vscode.Terminal): Promise<void> {
+        const startTime = Date.now();
+        this.log(`🟢 activateSidecar START: type=${type}`);
+
         // 터미널 ID 등록 (처음 보는 터미널이면 새 ID 할당)
         const terminalId = this.registerTerminalId(terminal);
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
         // 이미 이 터미널에 세션이 있으면 무시
         if (this.sessions.has(terminalId)) {
+            this.log(`  Skip: session already exists`);
             return;
         }
 
@@ -226,6 +267,9 @@ export class AIDetectionController {
                 panel.show();
             }
         });
+
+        const elapsed = Date.now() - startTime;
+        this.log(`🟢 activateSidecar END: terminalId=${terminalId}, elapsed=${elapsed}ms, totalSessions=${this.sessions.size}`);
     }
 
     /**
@@ -233,22 +277,29 @@ export class AIDetectionController {
      */
     private flushSession(terminalId: string): void {
         const context = this.sessions.get(terminalId);
-        if (!context) return;
+        if (!context) {
+            this.log(`⚪ flushSession: no context for ${terminalId}`);
+            return;
+        }
 
-        console.log(`[Sidecar] Flushing session: ${context.session.type} (${terminalId})`);
+        this.log(`🔄 flushSession START: ${context.session.type} (${terminalId})`);
 
-        // 리소스 정리
-        context.snapshotRepository.clear();
-        context.stateManager.reset();
-        (context.stateManager as PanelStateManager).clearRenderCallback();
+        try {
+            // 리소스 정리
+            context.snapshotRepository.clear();
+            context.stateManager.reset();
+            (context.stateManager as PanelStateManager).clearRenderCallback();
 
-        // 터미널 등록 해제
-        this.terminalGateway.unregisterTerminal(terminalId);
+            // 터미널 등록 해제
+            this.terminalGateway.unregisterTerminal(terminalId);
 
-        // 세션 제거
-        this.sessions.delete(terminalId);
+            // 세션 제거
+            this.sessions.delete(terminalId);
 
-        console.log('[Sidecar] Session flushed, panel closed');
+            this.log(`🔄 flushSession END: remainingSessions=${this.sessions.size}`);
+        } catch (error) {
+            this.logError('flushSession', error);
+        }
     }
 
     /** 터미널 → ID 매핑 (터미널 객체 기반) */

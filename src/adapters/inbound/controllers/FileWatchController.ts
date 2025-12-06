@@ -19,6 +19,14 @@ export class FileWatchController {
     /** 모든 활성 세션 참조 */
     private sessions: Map<string, SessionContext> | undefined;
 
+    // ===== Debug metrics =====
+    private eventCount = 0;
+    private eventCountWindow: number[] = []; // timestamps of recent events
+    private processedCount = 0;
+    private lastStatsLog = Date.now();
+    private pendingEvents = 0;
+    private maxPendingEvents = 0;
+
     constructor() {
         this.gitignore = ignore();
         this.includePatterns = ignore();
@@ -29,6 +37,39 @@ export class FileWatchController {
         if (!this.debugChannel) return;
         const timestamp = new Date().toISOString().substring(11, 23);
         this.debugChannel.appendLine(`[Sidecar] [${timestamp}] ${message}`);
+    }
+
+    private logStats(): void {
+        const now = Date.now();
+        // Log stats every 10 seconds
+        if (now - this.lastStatsLog < 10000) return;
+
+        // Calculate events per second (last 10 seconds)
+        const windowStart = now - 10000;
+        this.eventCountWindow = this.eventCountWindow.filter(t => t > windowStart);
+        const eventsPerSecond = (this.eventCountWindow.length / 10).toFixed(1);
+
+        const memUsage = process.memoryUsage();
+        const heapMB = (memUsage.heapUsed / 1024 / 1024).toFixed(1);
+        const rssMB = (memUsage.rss / 1024 / 1024).toFixed(1);
+
+        this.log(`📊 STATS: events/sec=${eventsPerSecond}, pending=${this.pendingEvents}, maxPending=${this.maxPendingEvents}, processed=${this.processedCount}, heap=${heapMB}MB, rss=${rssMB}MB`);
+
+        if (this.eventCountWindow.length > 50) {
+            this.log(`⚠️ WARNING: High event rate detected! ${this.eventCountWindow.length} events in last 10 seconds`);
+        }
+
+        this.lastStatsLog = now;
+        this.maxPendingEvents = Math.max(this.maxPendingEvents, this.pendingEvents);
+    }
+
+    private logError(context: string, error: unknown): void {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : '';
+        this.log(`❌ ERROR [${context}]: ${errorMsg}`);
+        if (stack) {
+            this.log(`  Stack: ${stack.split('\n').slice(0, 3).join(' -> ')}`);
+        }
     }
 
     /**
@@ -112,43 +153,79 @@ export class FileWatchController {
         const fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
 
         const handleFileChange = async (uri: vscode.Uri) => {
+            const startTime = Date.now();
             const relativePath = vscode.workspace.asRelativePath(uri);
-            this.log(`Event: ${relativePath}`);
+
+            // Track event
+            this.eventCount++;
+            this.eventCountWindow.push(Date.now());
+            this.pendingEvents++;
+            this.maxPendingEvents = Math.max(this.maxPendingEvents, this.pendingEvents);
+
+            this.log(`📁 Event #${this.eventCount}: ${relativePath} (pending=${this.pendingEvents})`);
+            this.logStats();
 
             try {
                 const stat = await vscode.workspace.fs.stat(uri);
                 if (stat.type === vscode.FileType.Directory) {
                     this.log(`  Skip: directory`);
+                    this.pendingEvents--;
                     return;
                 }
-            } catch {
+            } catch (error) {
                 this.log(`  Skip: stat failed`);
+                this.logError('stat', error);
+                this.pendingEvents--;
                 return;
             }
 
             if (!this.shouldTrack(uri)) {
                 this.log(`  Skip: shouldTrack=false`);
+                this.pendingEvents--;
                 return;
             }
 
             // 활성 세션이 없으면 무시
             if (!this.sessions || this.sessions.size === 0) {
                 this.log(`  Skip: no sessions (size=${this.sessions?.size ?? 'undefined'})`);
+                this.pendingEvents--;
                 return;
             }
 
             const fileName = path.basename(relativePath);
             this.log(`  Processing: ${relativePath} (sessions=${this.sessions.size})`);
 
-            // Git 상태 조회 (한 번만)
-            let status: 'added' | 'modified' | 'deleted' = 'modified';
-            if (this.gitPort && this.workspaceRoot) {
-                status = await this.gitPort.getFileStatus(this.workspaceRoot, relativePath);
-            }
+            try {
+                // Git 상태 조회 (한 번만)
+                const gitStart = Date.now();
+                let status: 'added' | 'modified' | 'deleted' = 'modified';
+                if (this.gitPort && this.workspaceRoot) {
+                    status = await this.gitPort.getFileStatus(this.workspaceRoot, relativePath);
+                }
+                const gitTime = Date.now() - gitStart;
+                if (gitTime > 100) {
+                    this.log(`  ⚠️ Slow git status: ${gitTime}ms`);
+                }
 
-            // 모든 활성 세션에 파일 변경 전파
-            for (const [, sessionContext] of this.sessions) {
-                await this.notifyFileChange(sessionContext, relativePath, fileName, status);
+                // 모든 활성 세션에 파일 변경 전파
+                for (const [terminalId, sessionContext] of this.sessions) {
+                    const notifyStart = Date.now();
+                    await this.notifyFileChange(sessionContext, relativePath, fileName, status);
+                    const notifyTime = Date.now() - notifyStart;
+                    if (notifyTime > 100) {
+                        this.log(`  ⚠️ Slow notifyFileChange for ${terminalId}: ${notifyTime}ms`);
+                    }
+                }
+
+                this.processedCount++;
+                const totalTime = Date.now() - startTime;
+                if (totalTime > 200) {
+                    this.log(`  ⚠️ Slow event processing: ${totalTime}ms total`);
+                }
+            } catch (error) {
+                this.logError('handleFileChange', error);
+            } finally {
+                this.pendingEvents--;
             }
         };
 
