@@ -75,4 +75,8 @@ export interface IPanelStateManager {
     setHNStories(stories: HNStoryInfo[], fetchedAt: number): void;
     setHNFeedError(error: string): void;
     clearHNFeed(): void;
+
+    // HN feed visibility toggle
+    setShowHNFeed(show: boolean): void;
+    toggleHNFeed(): void;
 }

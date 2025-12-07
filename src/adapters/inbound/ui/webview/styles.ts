@@ -2035,4 +2035,92 @@ button:hover {
   text-align: center;
   border-bottom: 1px solid var(--vscode-panel-border);
 }
+
+/* ============================================
+   Waiting Screen Styles
+   ============================================ */
+
+.waiting-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.waiting-spinner {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--vscode-foreground);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: waiting-spin 1s linear infinite;
+  margin-bottom: 12px;
+}
+
+@keyframes waiting-spin {
+  to { transform: rotate(360deg); }
+}
+
+.waiting-message {
+  font-size: 14px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 24px;
+}
+
+.meanwhile-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 16px 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.meanwhile-divider::before,
+.meanwhile-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--vscode-widget-border);
+}
+
+.waiting-feed-container {
+  width: 100%;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.waiting-refresh-btn {
+  margin-top: 16px;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder));
+  color: var(--vscode-foreground);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.waiting-refresh-btn:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+/* Feed Toggle Button */
+.feed-toggle-btn {
+  background: transparent;
+  border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder));
+  color: var(--vscode-foreground);
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-left: auto;
+}
+
+.feed-toggle-btn:hover {
+  background: var(--vscode-list-hoverBackground);
+}
 `;

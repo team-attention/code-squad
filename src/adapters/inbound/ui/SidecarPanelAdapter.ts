@@ -85,6 +85,9 @@ export class SidecarPanelAdapter {
     private panelStateManager: IPanelStateManager | undefined;
     private symbolPort: ISymbolPort | undefined;
 
+    // Article viewer panel (for HN stories)
+    private articlePanel: vscode.WebviewPanel | undefined;
+
     /**
      * 새 패널 생성 (터미널별 독립)
      */
@@ -235,8 +238,14 @@ export class SidecarPanelAdapter {
                     case 'openHNStory':
                         await this.handleOpenHNStory(message.url);
                         break;
+                    case 'openHNStoryInPanel':
+                        this.openArticleInWebview(message.url, message.title);
+                        break;
                     case 'openHNComments':
                         await this.handleOpenHNComments(message.storyId);
+                        break;
+                    case 'toggleFeed':
+                        this.panelStateManager?.toggleHNFeed();
                         break;
                     case 'toggleScopeCollapse':
                         this.panelStateManager?.toggleScopeCollapse(message.scopeId);
@@ -707,6 +716,139 @@ export class SidecarPanelAdapter {
         await vscode.env.openExternal(vscode.Uri.parse(hnUrl));
     }
 
+    /**
+     * Open an article in an internal WebviewPanel
+     */
+    private openArticleInWebview(url: string, title: string): void {
+        // Dispose existing panel if any
+        if (this.articlePanel) {
+            this.articlePanel.dispose();
+        }
+
+        // Create new panel
+        const truncatedTitle = title.length > 30 ? title.substring(0, 30) + '...' : title;
+        this.articlePanel = vscode.window.createWebviewPanel(
+            'sidecarArticle',
+            truncatedTitle,
+            vscode.ViewColumn.Two,
+            {
+                enableScripts: true,
+                retainContextWhenHidden: false,
+            }
+        );
+
+        // Set HTML content
+        this.articlePanel.webview.html = this.getArticleWebviewContent(url, title);
+
+        // Handle messages from webview
+        this.articlePanel.webview.onDidReceiveMessage(
+            message => {
+                switch (message.type) {
+                    case 'goBack':
+                        this.articlePanel?.dispose();
+                        break;
+                    case 'openExternal':
+                        vscode.env.openExternal(vscode.Uri.parse(url));
+                        break;
+                }
+            },
+            undefined,
+            this.disposables
+        );
+
+        // Cleanup on dispose
+        this.articlePanel.onDidDispose(() => {
+            this.articlePanel = undefined;
+        }, null, this.disposables);
+    }
+
+    private getArticleWebviewContent(url: string, title: string): string {
+        const escapedTitle = this.escapeHtml(title);
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'none';
+    frame-src https:;
+    style-src 'unsafe-inline';
+    script-src 'unsafe-inline';
+  ">
+  <title>${escapedTitle}</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background: var(--vscode-editor-background);
+      color: var(--vscode-foreground);
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      padding: 8px 12px;
+      background: var(--vscode-sideBar-background);
+      border-bottom: 1px solid var(--vscode-widget-border);
+      gap: 12px;
+    }
+    .header button {
+      background: transparent;
+      border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder));
+      color: var(--vscode-foreground);
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .header button:hover {
+      background: var(--vscode-list-hoverBackground);
+    }
+    .header .title {
+      flex: 1;
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    iframe {
+      flex: 1;
+      border: none;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <button onclick="goBack()">← Back</button>
+    <span class="title">${escapedTitle}</span>
+    <button onclick="openExternal()">Open in Browser</button>
+  </div>
+  <iframe src="${url}" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+  <script>
+    const vscode = acquireVsCodeApi();
+    function goBack() {
+      vscode.postMessage({ type: 'goBack' });
+    }
+    function openExternal() {
+      vscode.postMessage({ type: 'openExternal' });
+    }
+  </script>
+</body>
+</html>`;
+    }
+
+    private escapeHtml(text: string): string {
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
     // ===== Render method =====
 
     /**
@@ -749,6 +891,16 @@ export class SidecarPanelAdapter {
             this.panel.webview.postMessage({ type: 'dispose' });
         } catch (e) {
             // Panel might already be disposed, ignore
+        }
+
+        // Dispose article panel if it exists
+        if (this.articlePanel) {
+            try {
+                this.articlePanel.dispose();
+            } catch (e) {
+                // Already disposed, ignore
+            }
+            this.articlePanel = undefined;
         }
 
         // Fire callback

@@ -154,6 +154,7 @@ export interface PanelState {
     hnFeedStatus: HNFeedStatus;
     hnFeedError?: string;
     hnLastFetchTime?: number;
+    showHNFeed: boolean;
 }
 
 /**
@@ -178,5 +179,6 @@ export function createInitialPanelState(): PanelState {
         hnFeedStatus: 'idle',
         hnFeedError: undefined,
         hnLastFetchTime: undefined,
+        showHNFeed: false,
     };
 }

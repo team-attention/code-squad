@@ -162,6 +162,7 @@ export class PanelStateManager implements IPanelStateManager {
             scopedDiff: scopedDiff || null,
             selectedFile: diff.file,
             diffViewMode: viewMode,
+            showHNFeed: false,
         };
         this.render();
     }
@@ -498,6 +499,20 @@ export class PanelStateManager implements IPanelStateManager {
         this.state.hnFeedError = undefined;
         this.state.hnLastFetchTime = undefined;
         this.render();
+    }
+
+    // ===== HN feed visibility toggle =====
+
+    setShowHNFeed(show: boolean): void {
+        this.state = {
+            ...this.state,
+            showHNFeed: show,
+        };
+        this.render();
+    }
+
+    toggleHNFeed(): void {
+        this.setShowHNFeed(!this.state.showHNFeed);
     }
 
     // ===== Private =====

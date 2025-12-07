@@ -421,11 +421,17 @@ async function renderState(state) {
   renderComments(state.comments);
   renderAIStatus(state.aiStatus);
 
-  // Render based on diffViewMode
-  if (state.diffViewMode === 'scope' && state.scopedDiff) {
+  // Check if waiting screen should be shown
+  const shouldShowWaiting = state.aiStatus.active &&
+    (state.sessionFiles.length === 0 || state.showHNFeed);
+
+  if (shouldShowWaiting) {
+    renderWaitingScreen(state.hnStories, state.hnFeedStatus, state.hnFeedError);
+  } else if (state.diffViewMode === 'scope' && state.scopedDiff) {
+    // Render based on diffViewMode
     await renderScopedDiff(state.scopedDiff, state.selectedFile, state.comments, !!state.diff);
   } else {
-    await renderDiff(state.diff, state.selectedFile, state.diffViewMode, state.comments, !!state.scopedDiff, state.hnStories, state.hnFeedStatus, state.hnFeedError);
+    await renderDiff(state.diff, state.selectedFile, state.diffViewMode, state.comments, !!state.scopedDiff, state.hnStories, state.hnFeedStatus, state.hnFeedError, state.aiStatus);
   }
 
   // Restore scroll position after render
@@ -1507,7 +1513,7 @@ function scrollToLineInScopedDiff(line) {
 }
 
 // ===== Diff Rendering =====
-async function renderDiff(diff, selectedFile, viewMode, comments = [], hasScopedDiff = false, hnStories = [], hnFeedStatus = 'idle', hnFeedError = null) {
+async function renderDiff(diff, selectedFile, viewMode, comments = [], hasScopedDiff = false, hnStories = [], hnFeedStatus = 'idle', hnFeedError = null, aiStatus = { active: false }) {
   const header = document.querySelector('.diff-header-title');
   const stats = document.getElementById('diff-stats');
   const viewer = document.getElementById('diff-viewer');
@@ -1548,6 +1554,11 @@ async function renderDiff(diff, selectedFile, viewMode, comments = [], hasScoped
     selectedFile.endsWith('.mdx')
   );
 
+  // Feed toggle button (only when AI is active)
+  const feedToggleHtml = aiStatus.active
+    ? '<button class="feed-toggle-btn" onclick="toggleFeed()" title="Show HN Feed">📰</button>'
+    : '';
+
   if (isMarkdown) {
     stats.innerHTML = \`
       <span class="stat-added">+\${diff.stats.additions}</span>
@@ -1555,6 +1566,7 @@ async function renderDiff(diff, selectedFile, viewMode, comments = [], hasScoped
       <div class="view-mode-toggle">
         <button class="toggle-btn" onclick="toggleDiffViewMode()">\${viewMode === 'preview' ? 'Diff' : 'Preview'}</button>
       </div>
+      \${feedToggleHtml}
     \`;
 
     if (viewMode === 'preview') {
@@ -1575,6 +1587,7 @@ async function renderDiff(diff, selectedFile, viewMode, comments = [], hasScoped
       <span class="stat-added">+\${diff.stats.additions}</span>
       <span class="stat-removed">-\${diff.stats.deletions}</span>
       \${toggleHtml}
+      \${feedToggleHtml}
     \`;
   }
 
@@ -2755,6 +2768,33 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// ===== Waiting Screen =====
+function renderWaitingScreen(hnStories, hnFeedStatus, hnFeedError) {
+  const header = document.querySelector('.diff-header-title');
+  const stats = document.getElementById('diff-stats');
+  const viewer = document.getElementById('diff-viewer');
+  const diffToolbar = document.getElementById('diff-toolbar');
+
+  header.textContent = 'Waiting for changes...';
+  stats.innerHTML = '';
+  if (diffToolbar) diffToolbar.style.display = 'none';
+
+  const feedHtml = renderHNFeed(hnStories, hnFeedStatus, hnFeedError);
+
+  viewer.innerHTML = \`
+    <div class="waiting-screen">
+      <div class="waiting-spinner"></div>
+      <div class="waiting-message">Watching for file changes...</div>
+
+      <div class="meanwhile-divider">Meanwhile</div>
+
+      <div class="waiting-feed-container">
+        \${feedHtml}
+      </div>
+    </div>
+  \`;
+}
+
 // ===== Hacker News Feed =====
 function renderHNFeed(stories, status, error) {
   const isLoading = status === 'loading';
@@ -2816,15 +2856,17 @@ function renderHNFeed(stories, status, error) {
 function renderHNStory(story, index) {
   const domainDisplay = story.domain ? \`<span class="hn-story-domain">(\${escapeHtml(story.domain)})</span>\` : '';
   const storyUrl = story.url || story.discussionUrl;
+  // Escape title for use in onclick attribute (escape both HTML and quotes)
+  const escapedTitleForAttr = escapeHtml(story.title).replace(/'/g, "\\\\'");
 
   return \`
     <div class="hn-story">
-      <span class="hn-story-title" onclick="openHNStory('\${escapeHtml(storyUrl)}')" title="\${escapeHtml(story.title)}">
+      <span class="hn-story-title" onclick="openHNStory('\${escapeHtml(storyUrl)}', '\${escapedTitleForAttr}')" title="\${escapeHtml(story.title)}">
         \${escapeHtml(story.title)}
       </span>
       <div class="hn-story-meta">
         <span class="hn-story-score">▲ \${story.score}</span>
-        <span class="hn-story-comments" onclick="openHNComments(\${story.id})">
+        <span class="hn-story-comments" onclick="openHNStory('\${escapeHtml(story.discussionUrl)}', '\${escapedTitleForAttr} - HN Discussion')">
           💬 \${story.descendants} comments
         </span>
         \${domainDisplay}
@@ -2838,9 +2880,13 @@ window.refreshHNFeed = function() {
   vscode.postMessage({ type: 'refreshHNFeed' });
 };
 
-window.openHNStory = function(url) {
+window.toggleFeed = function() {
+  vscode.postMessage({ type: 'toggleFeed' });
+};
+
+window.openHNStory = function(url, title) {
   if (url) {
-    vscode.postMessage({ type: 'openHNStory', url: url });
+    vscode.postMessage({ type: 'openHNStoryInPanel', url: url, title: title || 'HN Story' });
   }
 };
 
