@@ -1,6 +1,6 @@
 import { webviewStyles } from './styles';
 import { webviewHtml } from './html';
-import { webviewScript } from './script';
+import { webviewScript } from './main';
 
 export function getWebviewContent(highlighterScriptUri?: string): string {
     // If highlighter script URI is provided, load it before the main script

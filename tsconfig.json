@@ -17,6 +17,10 @@
     "exclude": [
         "node_modules",
         ".vscode-test",
-        "src/adapters/inbound/ui/webview/webview-entry.ts"
+        "src/adapters/inbound/ui/webview/webview-entry.ts",
+        "src/adapters/inbound/ui/webview/state",
+        "src/adapters/inbound/ui/webview/utils",
+        "src/adapters/inbound/ui/webview/components",
+        "src/adapters/inbound/ui/webview/main.ts"
     ]
 }
