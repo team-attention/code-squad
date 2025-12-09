@@ -90,7 +90,7 @@ export function renderFileList(
   }
 
   // Build combined file list
-  let allFiles: FileItem[] = [...(sessionFiles || [])];
+  const allFiles: FileItem[] = [...(sessionFiles || [])];
   if (showUncommitted && uncommittedFiles) {
     allFiles.push(
       ...uncommittedFiles.map((f) => ({ ...f, isUncommitted: true }))

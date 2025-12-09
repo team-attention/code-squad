@@ -1,11 +1,14 @@
 import { webviewStyles } from './styles';
 import { webviewHtml } from './html';
-import { webviewScript } from './main';
 
-export function getWebviewContent(highlighterScriptUri?: string): string {
-    // If highlighter script URI is provided, load it before the main script
-    const highlighterScript = highlighterScriptUri
-        ? `<script src="${highlighterScriptUri}"></script>`
+export function getWebviewContent(bundledScriptUri?: string): string {
+    // The bundled script (dist/webview.js) contains all webview logic:
+    // - Shiki syntax highlighter
+    // - State management
+    // - All UI components
+    // - Event handlers
+    const bundledScript = bundledScriptUri
+        ? `<script src="${bundledScriptUri}"></script>`
         : '';
 
     return `<!DOCTYPE html>
@@ -17,8 +20,7 @@ export function getWebviewContent(highlighterScriptUri?: string): string {
     <style>${webviewStyles}</style>
 </head>
 ${webviewHtml}
-${highlighterScript}
-<script>${webviewScript}</script>
+${bundledScript}
 </body>
 </html>`;
 }

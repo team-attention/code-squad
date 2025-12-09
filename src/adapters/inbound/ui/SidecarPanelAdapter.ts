@@ -837,14 +837,14 @@ export class SidecarPanelAdapter {
     }
 
     private getHtmlForWebview(): string {
-        // Get URI for the bundled highlighter script
-        const highlighterScriptPath = vscode.Uri.joinPath(
+        // Get URI for the bundled webview script (includes all UI logic + Shiki highlighter)
+        const bundledScriptPath = vscode.Uri.joinPath(
             this.context.extensionUri,
             'dist',
             'webview.js'
         );
-        const highlighterScriptUri = this.panel.webview.asWebviewUri(highlighterScriptPath);
+        const bundledScriptUri = this.panel.webview.asWebviewUri(bundledScriptPath);
 
-        return getWebviewContent(highlighterScriptUri.toString());
+        return getWebviewContent(bundledScriptUri.toString());
     }
 }

@@ -20,6 +20,8 @@ export interface InlineCommentHandlers {
   onDraftClear: () => void;
   onSaveScrollPosition: () => void;
   onExpandSidebar: () => void;
+  onEdit?: (id: string, text: string) => void;
+  onDelete?: (id: string) => void;
   getSignal: () => AbortSignal;
 }
 
@@ -266,4 +268,14 @@ export function registerInlineCommentHandlers(handlers: InlineCommentHandlers): 
   win.toggleInlineComment = toggleInlineComment;
   win.startInlineEdit = startInlineEdit;
   win.cancelInlineEdit = cancelInlineEdit;
+  win.saveInlineEdit = (commentId: string) => {
+    if (handlers.onEdit) {
+      saveInlineEdit(commentId, handlers.onEdit, handlers.onSaveScrollPosition);
+    }
+  };
+  win.deleteComment = (commentId: string) => {
+    if (handlers.onDelete) {
+      handlers.onDelete(commentId);
+    }
+  };
 }

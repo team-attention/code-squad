@@ -200,3 +200,6 @@ window.SidecarHighlighter = {
 
 // Preload highlighter
 window.SidecarHighlighter.preload();
+
+// Import and initialize the main application
+import './webview-app';

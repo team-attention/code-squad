@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { exec } from 'child_process';
 import ignore, { Ignore } from 'ignore';
 import { SessionContext } from '../../../application/ports/outbound/SessionContext';
 import { IGitPort } from '../../../application/ports/outbound/IGitPort';
@@ -335,7 +336,6 @@ export class FileWatchController {
         if (!this.workspaceRoot) return Promise.resolve(undefined);
 
         return new Promise((resolve) => {
-            const { exec } = require('child_process');
             exec(
                 `cd "${this.workspaceRoot}" && git rev-parse HEAD`,
                 { maxBuffer: 1024 },
