@@ -177,16 +177,18 @@ export async function renderChunksToHtml(
     const chunk = chunks[i];
     const state = chunkStates[i] || { isCollapsed: false, scopeLabel: null };
 
-    let scopeLabel = state.scopeLabel;
-    if (!scopeLabel) {
-      if (chunk.oldStart === 0) {
-        scopeLabel = 'New file';
-      } else {
-        scopeLabel = `Lines ${chunk.oldStart}-${chunk.oldStart + chunk.lines.length}`;
-      }
+    // In diff mode, always use standard GitHub-style hunk headers (ignore scopeLabel)
+    // scopeLabel is only used in the dedicated Scope View (renderScopedDiff)
+    let chunkHeader: string;
+    if (chunk.oldStart === 0) {
+      chunkHeader = 'New file';
+    } else {
+      const oldCount = chunk.lines.filter(l => l.type !== 'addition').length;
+      const newCount = chunk.lines.filter(l => l.type !== 'deletion').length;
+      chunkHeader = `@@ -${chunk.oldStart},${oldCount} +${chunk.newStart},${newCount} @@`;
     }
 
-    html += renderChunkHeader(scopeLabel, i, chunk.stats);
+    html += renderChunkHeader(chunkHeader, i, chunk.stats);
 
     const linesClass = state.isCollapsed ? 'collapsed' : '';
     html += `<tbody class="chunk-lines ${linesClass}" data-chunk-index="${i}">`;

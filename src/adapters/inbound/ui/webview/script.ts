@@ -2443,20 +2443,20 @@ async function renderChunksToHtml(chunks, chunkStates, comments = [], language =
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
     const state = chunkStates[i] || { isCollapsed: false, scopeLabel: null };
-    let scopeLabel = state.scopeLabel;
-    if (!scopeLabel) {
-      if (chunk.oldStart === 0) {
-        scopeLabel = 'New file';
-      } else {
-        scopeLabel = \`Lines \${chunk.oldStart}-\${chunk.oldStart + chunk.lines.length}\`;
-      }
+    // In diff mode, always use standard GitHub-style hunk headers (ignore scopeLabel)
+    // scopeLabel is only used in the dedicated Scope View (renderScopedDiff)
+    let chunkHeader;
+    if (chunk.oldStart === 0) {
+      chunkHeader = 'New file';
+    } else {
+      chunkHeader = \`@@ -\${chunk.oldStart},\${chunk.lines.filter(l => l.type !== 'addition').length} +\${chunk.newStart},\${chunk.lines.filter(l => l.type !== 'deletion').length} @@\`;
     }
 
     html += \`
       <tr class="chunk-header-row" data-chunk-index="\${i}">
         <td colspan="3" class="chunk-header">
           <span class="chunk-toggle">▼</span>
-          <span class="chunk-scope">\${escapeHtml(scopeLabel)}</span>
+          <span class="chunk-scope">\${escapeHtml(chunkHeader)}</span>
           <span class="chunk-stats">
             <span class="added">+\${chunk.stats?.additions || 0}</span>
             <span class="removed">-\${chunk.stats?.deletions || 0}</span>
