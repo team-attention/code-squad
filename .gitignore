@@ -34,4 +34,4 @@ coverage/
 .env
 CLAUDE.md
 .codex
-content
+/content
