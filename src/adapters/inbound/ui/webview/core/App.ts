@@ -366,6 +366,7 @@ async function renderState(state: RenderState): Promise<void> {
   const shouldShowWaiting = state.aiStatus.active && (!hasVisibleFiles || state.showHNFeed);
 
   if (shouldShowWaiting) {
+    ensureDefaultHeaderStructure();
     showWaitingScreen(
       state.hnStories,
       state.hnFeedStatus,
@@ -786,8 +787,12 @@ function renderContentViewState(contentView: ContentView): void {
 
   currentContentUrl = contentView.url;
   const vsCodeApi = getVSCode();
+  const isSidebarCollapsed = document.body.classList.contains('sidebar-collapsed');
 
-  viewerHeader.innerHTML = renderContentViewHeader({ title: contentView.title });
+  viewerHeader.innerHTML = renderContentViewHeader({
+    title: contentView.title,
+    isSidebarCollapsed,
+  });
 
   if (diffStats) diffStats.innerHTML = '';
   if (diffToolbar) diffToolbar.style.display = 'none';
@@ -860,6 +865,28 @@ function renderContentViewState(contentView: ContentView): void {
     externalErrorBtn.addEventListener(
       'click',
       () => vsCodeApi.postMessage({ type: 'openContentExternal', url: currentContentUrl }),
+      { signal: getSignal() }
+    );
+  }
+
+  // Attach sidebar toggle handler
+  const sidebarElements = getSidebarElements();
+  const toggleBtn = document.getElementById('toggle-sidebar');
+  if (toggleBtn && sidebarElements) {
+    const uiState = stateManager.getUI();
+    toggleBtn.addEventListener(
+      'click',
+      () => {
+        if (document.body.classList.contains('sidebar-collapsed')) {
+          expandSidebar(sidebarElements, uiState.sidebarWidth);
+          toggleBtn.textContent = '>';
+          toggleBtn.setAttribute('aria-label', 'Collapse file list panel');
+        } else {
+          collapseSidebar(sidebarElements);
+          toggleBtn.textContent = '<';
+          toggleBtn.setAttribute('aria-label', 'Expand file list panel');
+        }
+      },
       { signal: getSignal() }
     );
   }

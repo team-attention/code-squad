@@ -57,10 +57,18 @@ export function renderContentView(props: ContentViewProps): string {
 /**
  * Returns header HTML for content view
  */
-export function renderContentViewHeader(props: { title: string }): string {
-    const { title } = props;
+export function renderContentViewHeader(props: {
+    title: string;
+    isSidebarCollapsed: boolean;
+}): string {
+    const { title, isSidebarCollapsed } = props;
     const truncatedTitle =
         title.length > 40 ? title.substring(0, 40) + '...' : title;
+
+    const toggleLabel = isSidebarCollapsed
+        ? 'Expand file list panel'
+        : 'Collapse file list panel';
+    const toggleText = isSidebarCollapsed ? '<' : '>';
 
     return `
         <span class="diff-header-icon">🌐</span>
@@ -73,5 +81,6 @@ export function renderContentViewHeader(props: { title: string }): string {
                 ↗ Open in Browser
             </button>
         </div>
+        <button class="sidebar-toggle" id="toggle-sidebar" aria-label="${toggleLabel}">${toggleText}</button>
     `;
 }
