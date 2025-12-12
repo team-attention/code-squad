@@ -8,11 +8,13 @@ export class CaptureSnapshotsUseCase implements ICaptureSnapshotsUseCase {
     constructor(
         private readonly snapshotRepository: ISnapshotRepository,
         private readonly fileSystemPort: IFileSystemPort,
-        private readonly fileGlobber: IFileGlobber
+        private readonly fileGlobber: IFileGlobber,
+        private readonly workspaceRootOverride?: string
     ) {}
 
     async execute(includePatterns: string[]): Promise<number> {
-        const workspaceRoot = this.fileSystemPort.getWorkspaceRoot();
+        // 세션별 workspaceRoot 우선 사용 (worktree 지원)
+        const workspaceRoot = this.workspaceRootOverride || this.fileSystemPort.getWorkspaceRoot();
         if (!workspaceRoot) return 0;
 
         this.snapshotRepository.clear();

@@ -68,6 +68,20 @@ class CircularBuffer<T> {
     }
 }
 
+/** Per-session worktree watcher resources */
+interface SessionWorktreeWatcher {
+    terminalId: string;
+    workspaceRoot: string;
+    repository: Repository | undefined;
+    stateSubscription: vscode.Disposable | undefined;
+    headWatcher: vscode.FileSystemWatcher | undefined;
+    lastHeadCommit: string | undefined;
+    /** FileSystemWatcher for worktree directory (fallback when git extension unavailable) */
+    fileWatcher: vscode.FileSystemWatcher | undefined;
+    /** Debounce timer for file watcher events */
+    fileWatcherDebounceTimer: NodeJS.Timeout | undefined;
+}
+
 export class FileWatchController {
     private gitignore: Ignore;
     private includePatterns: Ignore;
@@ -91,6 +105,10 @@ export class FileWatchController {
     private whitelistWatchers: vscode.FileSystemWatcher[] = [];
     /** Extension context for config change handling */
     private extensionContext: vscode.ExtensionContext | undefined;
+
+    // ===== Session-specific worktree watchers =====
+    /** Watchers for sessions with different workspaceRoot (worktree support) */
+    private sessionWorktreeWatchers: Map<string, SessionWorktreeWatcher> = new Map();
 
     // ===== Debug metrics =====
     private eventCount = 0;
@@ -793,13 +811,15 @@ export class FileWatchController {
         if (isFirstFile || isSelectedFile) {
             const diffResult = await generateDiffUseCase.execute(relativePath);
             if (diffResult) {
-                const displayState = await this.createDiffDisplayState(diffResult, relativePath);
+                // Use session's workspaceRoot for worktree support
+                const sessionWorkspaceRoot = context.workspaceRoot || this.workspaceRoot;
+                const displayState = await this.createDiffDisplayState(diffResult, relativePath, sessionWorkspaceRoot);
                 stateManager.showDiff(displayState);
             }
         }
     }
 
-    private async createDiffDisplayState(diff: DiffResult, filePath: string): Promise<DiffDisplayState> {
+    private async createDiffDisplayState(diff: DiffResult, filePath: string, workspaceRoot?: string): Promise<DiffDisplayState> {
         const chunkStates: ChunkDisplayInfo[] = diff.chunks.map((_, index) => ({
             index,
             isCollapsed: false,
@@ -813,9 +833,10 @@ export class FileWatchController {
         };
 
         // For markdown files, add full content and change info for preview
+        const effectiveRoot = workspaceRoot || this.workspaceRoot;
         const isMarkdown = filePath.endsWith('.md') || filePath.endsWith('.markdown') || filePath.endsWith('.mdx');
-        if (isMarkdown && this.workspaceRoot) {
-            const fullContent = await this.readFullFileContent(filePath);
+        if (isMarkdown && effectiveRoot) {
+            const fullContent = await this.readFullFileContent(filePath, effectiveRoot);
             if (fullContent !== null) {
                 displayState.newFileContent = fullContent;
                 displayState.changedLineNumbers = this.extractChangedLineNumbers(diff);
@@ -826,10 +847,11 @@ export class FileWatchController {
         return displayState;
     }
 
-    private async readFullFileContent(relativePath: string): Promise<string | null> {
-        if (!this.workspaceRoot) return null;
+    private async readFullFileContent(relativePath: string, workspaceRoot?: string): Promise<string | null> {
+        const effectiveRoot = workspaceRoot || this.workspaceRoot;
+        if (!effectiveRoot) return null;
         try {
-            const absolutePath = path.join(this.workspaceRoot, relativePath);
+            const absolutePath = path.join(effectiveRoot, relativePath);
             const uri = vscode.Uri.file(absolutePath);
             const content = await vscode.workspace.fs.readFile(uri);
             return Buffer.from(content).toString('utf8');
@@ -880,5 +902,292 @@ export class FileWatchController {
         }
 
         return deletions;
+    }
+
+    // ===== Session Worktree Management =====
+
+    /**
+     * Register a session's workspaceRoot for file watching.
+     * Creates separate watchers if workspaceRoot differs from VSCode workspace.
+     */
+    async registerSessionWorkspace(terminalId: string, sessionWorkspaceRoot: string): Promise<void> {
+        // Skip if same as VSCode workspace
+        if (sessionWorkspaceRoot === this.workspaceRoot) {
+            this.log(`[Worktree] Session ${terminalId}: same as VSCode workspace, skipping`);
+            return;
+        }
+
+        // Skip if already registered
+        if (this.sessionWorktreeWatchers.has(terminalId)) {
+            this.log(`[Worktree] Session ${terminalId}: already registered`);
+            return;
+        }
+
+        this.log(`[Worktree] Registering session ${terminalId} with workspaceRoot: ${sessionWorkspaceRoot}`);
+
+        const watcher: SessionWorktreeWatcher = {
+            terminalId,
+            workspaceRoot: sessionWorkspaceRoot,
+            repository: undefined,
+            stateSubscription: undefined,
+            headWatcher: undefined,
+            lastHeadCommit: undefined,
+            fileWatcher: undefined,
+            fileWatcherDebounceTimer: undefined,
+        };
+
+        // Find git repository for this worktree
+        let useFileWatcher = true;
+        if (this.gitAPI) {
+            watcher.repository = this.gitAPI.repositories.find(
+                repo => repo.rootUri.fsPath === sessionWorkspaceRoot
+            );
+
+            if (watcher.repository) {
+                this.log(`[Worktree] Found repository for ${sessionWorkspaceRoot}`);
+                // Subscribe to repository state changes
+                watcher.stateSubscription = watcher.repository.state.onDidChange(() => {
+                    this.handleWorktreeGitStateChange(terminalId);
+                });
+                useFileWatcher = false;
+            } else {
+                this.log(`[Worktree] No repository found for ${sessionWorkspaceRoot}, using FileSystemWatcher fallback`);
+            }
+        }
+
+        // Use FileSystemWatcher if git extension doesn't recognize the repository
+        if (useFileWatcher) {
+            this.log(`[Worktree] Setting up FileSystemWatcher for ${sessionWorkspaceRoot}`);
+            // Watch all files in the worktree directory
+            const filePattern = new vscode.RelativePattern(sessionWorkspaceRoot, '**/*');
+            watcher.fileWatcher = vscode.workspace.createFileSystemWatcher(filePattern);
+
+            const handleFileChange = (uri: vscode.Uri) => {
+                // Skip .git directory
+                if (uri.fsPath.includes('/.git/') || uri.fsPath.includes('\\.git\\')) {
+                    return;
+                }
+                // Debounce file changes (300ms)
+                if (watcher.fileWatcherDebounceTimer) {
+                    clearTimeout(watcher.fileWatcherDebounceTimer);
+                }
+                watcher.fileWatcherDebounceTimer = setTimeout(() => {
+                    this.handleWorktreeFileChange(terminalId, uri);
+                }, 300);
+            };
+
+            watcher.fileWatcher.onDidChange(handleFileChange);
+            watcher.fileWatcher.onDidCreate(handleFileChange);
+            watcher.fileWatcher.onDidDelete(handleFileChange);
+        }
+
+        // Setup git HEAD watcher for this worktree
+        const gitPattern = new vscode.RelativePattern(
+            sessionWorkspaceRoot,
+            '.git/{HEAD,refs/**,index}'
+        );
+        watcher.headWatcher = vscode.workspace.createFileSystemWatcher(gitPattern);
+
+        const handleGitChange = async () => {
+            const currentCommit = await this.getHeadCommitForPath(sessionWorkspaceRoot);
+            if (currentCommit && currentCommit !== watcher.lastHeadCommit) {
+                this.log(`[Worktree] Git commit detected in ${sessionWorkspaceRoot}: ${watcher.lastHeadCommit?.slice(0, 7)} -> ${currentCommit.slice(0, 7)}`);
+                watcher.lastHeadCommit = currentCommit;
+                await this.handleWorktreeCommit(terminalId);
+            }
+        };
+
+        watcher.headWatcher.onDidChange(handleGitChange);
+        watcher.headWatcher.onDidCreate(handleGitChange);
+
+        // Initialize last commit hash
+        watcher.lastHeadCommit = await this.getHeadCommitForPath(sessionWorkspaceRoot);
+
+        this.sessionWorktreeWatchers.set(terminalId, watcher);
+        this.log(`[Worktree] Session ${terminalId} registered successfully`);
+    }
+
+    /**
+     * Unregister a session's workspaceRoot watchers.
+     */
+    unregisterSessionWorkspace(terminalId: string): void {
+        const watcher = this.sessionWorktreeWatchers.get(terminalId);
+        if (!watcher) {
+            return;
+        }
+
+        this.log(`[Worktree] Unregistering session ${terminalId}`);
+
+        // Dispose resources
+        watcher.stateSubscription?.dispose();
+        watcher.headWatcher?.dispose();
+        watcher.fileWatcher?.dispose();
+        if (watcher.fileWatcherDebounceTimer) {
+            clearTimeout(watcher.fileWatcherDebounceTimer);
+        }
+
+        this.sessionWorktreeWatchers.delete(terminalId);
+        this.log(`[Worktree] Session ${terminalId} unregistered`);
+    }
+
+    /**
+     * Handle file change in worktree (via FileSystemWatcher).
+     */
+    private async handleWorktreeFileChange(terminalId: string, uri: vscode.Uri): Promise<void> {
+        const watcher = this.sessionWorktreeWatchers.get(terminalId);
+        if (!watcher || !this.gitPort) return;
+
+        const session = this.sessions?.get(terminalId);
+        if (!session) return;
+
+        try {
+            const relativePath = path.relative(watcher.workspaceRoot, uri.fsPath);
+            const fileName = path.basename(relativePath);
+
+            // Skip if path is outside worktree or is gitignored
+            if (relativePath.startsWith('..') || this.gitignore.ignores(relativePath)) {
+                return;
+            }
+
+            this.log(`[Worktree:FSW] File change detected: ${relativePath} (session=${terminalId})`);
+
+            // Get git status for this file
+            const status = await this.gitPort.getFileStatus(watcher.workspaceRoot, relativePath);
+
+            // Notify session
+            await this.notifyFileChange(session, relativePath, fileName, status);
+        } catch (error) {
+            this.logError('handleWorktreeFileChange', error);
+        }
+    }
+
+    /**
+     * Handle git state change for a specific worktree session.
+     */
+    private async handleWorktreeGitStateChange(terminalId: string): Promise<void> {
+        const watcher = this.sessionWorktreeWatchers.get(terminalId);
+        if (!watcher?.repository) return;
+
+        const session = this.sessions?.get(terminalId);
+        if (!session) return;
+
+        const state = watcher.repository.state;
+        const changes = [...state.workingTreeChanges, ...state.indexChanges];
+
+        // Deduplicate by file path
+        const uniqueChanges = new Map<string, Change>();
+        for (const change of changes) {
+            const fsPath = change.uri.fsPath;
+            if (!uniqueChanges.has(fsPath)) {
+                uniqueChanges.set(fsPath, change);
+            }
+        }
+
+        if (uniqueChanges.size === 0) {
+            return;
+        }
+
+        this.log(`[Worktree] Session ${terminalId} git state change: ${uniqueChanges.size} unique files`);
+
+        // Process each changed file for this specific session
+        for (const [fsPath, change] of uniqueChanges) {
+            // Skip if recently processed
+            const now = Date.now();
+            const dedupeKey = `${terminalId}:${fsPath}`;
+            const lastProcessed = this.lastProcessedChanges.get(dedupeKey);
+            if (lastProcessed && now - lastProcessed < 100) {
+                continue;
+            }
+            this.lastProcessedChanges.set(dedupeKey, now);
+
+            // Calculate relative path from session's workspaceRoot
+            const relativePath = path.relative(watcher.workspaceRoot, fsPath);
+            const fileName = path.basename(relativePath);
+
+            this.eventCount++;
+            this.eventCountWindow.push(now);
+
+            this.log(`[Worktree] Event #${this.eventCount}: ${relativePath} (session=${terminalId}, status=${Status[change.status]})`);
+
+            // Get git status
+            let status: 'added' | 'modified' | 'deleted' = 'modified';
+            if (this.gitPort) {
+                status = await this.gitPort.getFileStatus(watcher.workspaceRoot, relativePath);
+            }
+
+            // Notify only this session
+            await this.notifyFileChange(session, relativePath, fileName, status);
+        }
+
+        // Cleanup old dedup entries
+        const cutoff = Date.now() - 5000;
+        for (const [key, timestamp] of this.lastProcessedChanges) {
+            if (timestamp < cutoff) {
+                this.lastProcessedChanges.delete(key);
+            }
+        }
+    }
+
+    /**
+     * Handle git commit for a specific worktree session.
+     */
+    private async handleWorktreeCommit(terminalId: string): Promise<void> {
+        const watcher = this.sessionWorktreeWatchers.get(terminalId);
+        if (!watcher) return;
+
+        const session = this.sessions?.get(terminalId);
+        if (!session || !this.gitPort) return;
+
+        this.log(`[Worktree] Refreshing session ${terminalId} files after commit...`);
+
+        const { stateManager } = session;
+        const currentState = stateManager.getState();
+
+        // Get current uncommitted files from git
+        const uncommittedFiles = await this.gitPort.getUncommittedFilesWithStatus(watcher.workspaceRoot);
+        const uncommittedPaths = new Set(uncommittedFiles.map(f => f.path));
+
+        // Find files that were committed
+        const filesToRemove = currentState.sessionFiles.filter(f => {
+            const isUncommitted = uncommittedPaths.has(f.path);
+            const isWhitelisted = this.includePatterns.ignores(f.path);
+            return !isUncommitted || isWhitelisted;
+        });
+
+        // Remove files from session
+        for (const file of filesToRemove) {
+            const reason = this.includePatterns.ignores(file.path) ? 'whitelist' : 'committed';
+            this.log(`[Worktree] Removing ${reason} file: ${file.path}`);
+            stateManager.removeSessionFile(file.path);
+        }
+
+        // Update baseline
+        const baselineFiles: FileInfo[] = uncommittedFiles.map(f => ({
+            path: f.path,
+            name: path.basename(f.path),
+            status: f.status,
+        }));
+        stateManager.setBaseline(baselineFiles);
+
+        this.log(`[Worktree] Session ${terminalId}: removed ${filesToRemove.length} files`);
+    }
+
+    /**
+     * Get HEAD commit hash for a specific path.
+     */
+    private getHeadCommitForPath(workspaceRoot: string): Promise<string | undefined> {
+        return new Promise((resolve) => {
+            exec(
+                `cd "${workspaceRoot}" && git rev-parse HEAD`,
+                { maxBuffer: 1024 },
+                (error: Error | null, stdout: string) => {
+                    if (error) {
+                        resolve(undefined);
+                    } else {
+                        resolve(stdout.trim());
+                    }
+                }
+            );
+        });
     }
 }

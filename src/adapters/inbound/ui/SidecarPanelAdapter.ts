@@ -71,6 +71,7 @@ export class SidecarPanelAdapter {
     private readonly panel: vscode.WebviewPanel;
     private readonly context: vscode.ExtensionContext;
     private readonly terminalId: string;
+    private readonly workspaceRoot: string | undefined;
     private disposables: vscode.Disposable[] = [];
     private onDisposeCallback: (() => void) | undefined;
 
@@ -90,7 +91,8 @@ export class SidecarPanelAdapter {
      */
     public static createNew(
         context: vscode.ExtensionContext,
-        terminalId: string
+        terminalId: string,
+        workspaceRoot?: string
     ): SidecarPanelAdapter {
         // 이미 이 터미널에 패널이 있으면 반환
         const existing = SidecarPanelAdapter.activePanels.get(terminalId);
@@ -113,7 +115,7 @@ export class SidecarPanelAdapter {
             }
         );
 
-        const adapter = new SidecarPanelAdapter(panel, context, terminalId);
+        const adapter = new SidecarPanelAdapter(panel, context, terminalId, workspaceRoot);
         SidecarPanelAdapter.activePanels.set(terminalId, adapter);
         return adapter;
     }
@@ -135,11 +137,13 @@ export class SidecarPanelAdapter {
     private constructor(
         panel: vscode.WebviewPanel,
         context: vscode.ExtensionContext,
-        terminalId: string = 'default'
+        terminalId: string = 'default',
+        workspaceRoot?: string
     ) {
         this.panel = panel;
         this.context = context;
         this.terminalId = terminalId;
+        this.workspaceRoot = workspaceRoot;
 
         this.initializeWebview();
 
@@ -364,10 +368,11 @@ export class SidecarPanelAdapter {
 
     private async readFullFileContent(relativePath: string): Promise<string | null> {
         try {
-            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-            if (!workspaceRoot) return null;
+            // Use session's workspaceRoot for worktree support, fallback to VSCode workspace
+            const effectiveRoot = this.workspaceRoot || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!effectiveRoot) return null;
 
-            const absolutePath = path.join(workspaceRoot, relativePath);
+            const absolutePath = path.join(effectiveRoot, relativePath);
             const uri = vscode.Uri.file(absolutePath);
             const content = await vscode.workspace.fs.readFile(uri);
             return Buffer.from(content).toString('utf8');

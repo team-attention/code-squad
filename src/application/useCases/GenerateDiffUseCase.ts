@@ -10,11 +10,13 @@ export class GenerateDiffUseCase implements IGenerateDiffUseCase {
         private readonly snapshotRepository: ISnapshotRepository,
         private readonly fileSystemPort: IFileSystemPort,
         private readonly gitPort: IGitPort,
-        private readonly diffService: DiffService
+        private readonly diffService: DiffService,
+        private readonly workspaceRootOverride?: string
     ) {}
 
     async execute(relativePath: string): Promise<DiffResult | null> {
-        const workspaceRoot = this.fileSystemPort.getWorkspaceRoot();
+        // 세션별 workspaceRoot 우선 사용 (worktree 지원)
+        const workspaceRoot = this.workspaceRootOverride || this.fileSystemPort.getWorkspaceRoot();
         if (!workspaceRoot) return null;
 
         let diffResult: DiffResult;

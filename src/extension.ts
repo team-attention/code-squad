@@ -79,6 +79,9 @@ export function activate(context: vscode.ExtensionContext) {
     fileWatchController.setGitPort(gitGateway);
     fileWatchController.setSessionsRef(aiDetectionController.getSessions());
 
+    // Connect controllers for worktree support
+    aiDetectionController.setFileWatchController(fileWatchController);
+
     // Activate Controllers
     aiDetectionController.activate(context);
     fileWatchController.activate(context);

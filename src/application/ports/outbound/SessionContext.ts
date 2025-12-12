@@ -16,6 +16,9 @@ export interface SessionContext {
     /** AI 세션 정보 */
     session: AISession;
 
+    /** 터미널의 작업 디렉토리 (worktree 지원용) */
+    workspaceRoot: string;
+
     /** 이 세션의 스냅샷 저장소 */
     snapshotRepository: ISnapshotRepository;
 

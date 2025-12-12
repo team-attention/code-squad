@@ -29,6 +29,12 @@ import { InMemorySnapshotRepository } from '../../../infrastructure/repositories
 import { VscodeTerminalGateway } from '../../outbound/gateways/VscodeTerminalGateway';
 import { SidecarPanelAdapter } from '../ui/SidecarPanelAdapter';
 
+// Forward declaration for FileWatchController interface
+interface IFileWatchController {
+    registerSessionWorkspace(terminalId: string, workspaceRoot: string): Promise<void>;
+    unregisterSessionWorkspace(terminalId: string): void;
+}
+
 export class AIDetectionController {
     /** 터미널별 독립 세션 컨텍스트 */
     private sessions = new Map<string, SessionContext>();
@@ -38,6 +44,9 @@ export class AIDetectionController {
     private readonly SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
     private readonly CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
     private cleanupInterval: NodeJS.Timeout | null = null;
+
+    /** FileWatchController reference for worktree support */
+    private fileWatchController: IFileWatchController | undefined;
 
     private log(message: string): void {
         if (!this.debugChannel) return;
@@ -70,6 +79,13 @@ export class AIDetectionController {
         private readonly workspaceStatePort?: IWorkspaceStatePort
     ) {}
 
+    /**
+     * Set FileWatchController reference for worktree session tracking.
+     */
+    setFileWatchController(controller: IFileWatchController): void {
+        this.fileWatchController = controller;
+    }
+
     activate(context: vscode.ExtensionContext): void {
         this.debugChannel = vscode.window.createOutputChannel('Sidecar AI Detection');
         context.subscriptions.push(this.debugChannel);
@@ -94,6 +110,15 @@ export class AIDetectionController {
             vscode.window.onDidCloseTerminal(terminal => {
                 this.log(`⚫ Terminal closed: ${terminal.name}`);
                 this.handleTerminalClose(terminal);
+            })
+        );
+
+        // Focus panel when terminal is focused
+        context.subscriptions.push(
+            vscode.window.onDidChangeActiveTerminal(terminal => {
+                if (terminal) {
+                    this.handleTerminalFocus(terminal);
+                }
             })
         );
 
@@ -262,7 +287,14 @@ export class AIDetectionController {
         // 터미널 ID 등록 (처음 보는 터미널이면 새 ID 할당)
         const terminalId = this.registerTerminalId(terminal);
         this.log(`🟢 activateSidecar: registered terminalId=${terminalId}`);
-        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+        // 터미널의 현재 작업 디렉토리 감지 (worktree 지원)
+        // shellIntegration.cwd는 VS Code 1.93+ 에서 사용 가능
+        const terminalCwd = terminal.shellIntegration?.cwd?.fsPath;
+        const fallbackRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        const workspaceRoot = terminalCwd || fallbackRoot;
+
+        this.log(`🟢 activateSidecar: terminalCwd=${terminalCwd}, fallbackRoot=${fallbackRoot}, using=${workspaceRoot}`);
 
         // 이미 이 터미널에 세션이 있으면 무시
         if (this.sessions.has(terminalId)) {
@@ -278,14 +310,16 @@ export class AIDetectionController {
         const captureSnapshotsUseCase = new CaptureSnapshotsUseCase(
             snapshotRepository,
             this.fileSystemGateway,
-            this.fileGlobber
+            this.fileGlobber,
+            workspaceRoot  // 세션별 workspaceRoot (worktree 지원)
         );
 
         const generateDiffUseCase = new GenerateDiffUseCase(
             snapshotRepository,
             this.fileSystemGateway,
             this.gitPort,
-            this.diffService
+            this.diffService,
+            workspaceRoot  // 세션별 workspaceRoot (worktree 지원)
         );
 
         const addCommentUseCase = new AddCommentUseCase(
@@ -325,7 +359,7 @@ export class AIDetectionController {
         await this.moveTerminalToSide(terminalId);
 
         // ===== 패널 생성 =====
-        const panel = SidecarPanelAdapter.createNew(this.getExtensionContext(), terminalId);
+        const panel = SidecarPanelAdapter.createNew(this.getExtensionContext(), terminalId, workspaceRoot);
 
         // State manager → Panel 연결
         stateManager.setRenderCallback((state) => panel.render(state));
@@ -356,6 +390,7 @@ export class AIDetectionController {
         const context: SessionContext = {
             terminalId,
             session,
+            workspaceRoot: workspaceRoot || '',
             snapshotRepository,
             stateManager,
             generateDiffUseCase,
@@ -367,6 +402,11 @@ export class AIDetectionController {
 
         this.sessions.set(terminalId, context);
         this.log(`🟢 activateSidecar: session created, totalSessions=${this.sessions.size}`);
+
+        // Register worktree watcher if workspaceRoot differs from VSCode workspace
+        if (workspaceRoot && this.fileWatchController) {
+            await this.fileWatchController.registerSessionWorkspace(terminalId, workspaceRoot);
+        }
 
         // Panel dispose 시 세션 정리
         panel.onDispose(() => {
@@ -413,6 +453,9 @@ export class AIDetectionController {
 
             // 터미널 등록 해제
             this.terminalGateway.unregisterTerminal(terminalId);
+
+            // Worktree watcher 해제
+            this.fileWatchController?.unregisterSessionWorkspace(terminalId);
 
             this.log(`🔄 flushSession END: remainingSessions=${this.sessions.size}`);
         } catch (error) {
@@ -506,6 +549,20 @@ export class AIDetectionController {
         if (context) {
             console.log(`[Sidecar] Terminal closed: ${context.session.type} (${terminalId})`);
             context.disposePanel();
+        }
+    }
+
+    private handleTerminalFocus(terminal: vscode.Terminal): void {
+        const terminalId = this.getTerminalId(terminal);
+        const context = this.sessions.get(terminalId);
+
+        if (context) {
+            // Show the panel associated with this terminal
+            const panel = SidecarPanelAdapter.getPanel(terminalId);
+            if (panel) {
+                panel.show();
+                this.updateSessionActivity(terminalId);
+            }
         }
     }
 
