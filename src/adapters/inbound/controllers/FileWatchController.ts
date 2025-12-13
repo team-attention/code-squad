@@ -134,8 +134,12 @@ export class FileWatchController {
 
     private log(message: string): void {
         if (!this.debugChannel) return;
-        const timestamp = new Date().toISOString().substring(11, 23);
-        this.debugChannel.appendLine(`[Sidecar] [${timestamp}] ${message}`);
+        try {
+            const timestamp = new Date().toISOString().substring(11, 23);
+            this.debugChannel.appendLine(`[Sidecar] [${timestamp}] ${message}`);
+        } catch {
+            // Channel may be disposed during extension deactivation
+        }
     }
 
     private logStats(): void {
