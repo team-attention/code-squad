@@ -9,9 +9,11 @@ export class VscodeTerminalGateway implements ITerminalPort {
     private isActive = new Map<string, boolean>();
     private disposables: vscode.Disposable[] = [];
     private debugChannel: vscode.OutputChannel | undefined;
+    // Track pending executions for terminals not yet registered
+    private pendingExecutions = new Map<vscode.Terminal, vscode.TerminalShellExecution>();
 
     constructor() {
-        this.debugChannel = vscode.window.createOutputChannel('Sidecar Terminal');
+        this.debugChannel = vscode.window.createOutputChannel('Code Squad Terminal');
     }
 
     private log(message: string): void {
@@ -33,6 +35,10 @@ export class VscodeTerminalGateway implements ITerminalPort {
                     this.setActivity(terminalId, true);
                     // Read terminal output stream
                     this.readOutputStream(terminalId, e.execution);
+                } else {
+                    // Terminal not yet registered - save execution for later
+                    this.log(`📦 Storing pending execution for unregistered terminal: ${e.terminal.name}`);
+                    this.pendingExecutions.set(e.terminal, e.execution);
                 }
             })
         );
@@ -44,6 +50,8 @@ export class VscodeTerminalGateway implements ITerminalPort {
                 if (terminalId) {
                     this.setActivity(terminalId, false);
                 }
+                // Clean up pending execution if it was never picked up
+                this.pendingExecutions.delete(e.terminal);
             })
         );
     }
@@ -97,6 +105,16 @@ export class VscodeTerminalGateway implements ITerminalPort {
     registerTerminal(id: string, terminal: vscode.Terminal): void {
         this.terminals.set(id, terminal);
         this.terminalToId.set(terminal, id);
+
+        // Check for pending execution saved before registration
+        // This handles the case when claude is started in a terminal before session registration
+        const pendingExecution = this.pendingExecutions.get(terminal);
+        if (pendingExecution) {
+            this.log(`📖 registerTerminal: found pending execution for ${id}, starting output read`);
+            this.pendingExecutions.delete(terminal);
+            this.setActivity(id, true);
+            this.readOutputStream(id, pendingExecution);
+        }
     }
 
     unregisterTerminal(id: string): void {
