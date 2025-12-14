@@ -17,7 +17,7 @@ export class CreateThreadUseCase implements ICreateThreadUseCase {
     ) {}
 
     async execute(input: CreateThreadInput): Promise<CreateThreadOutput> {
-        const { name, isolationMode, branchName, workspaceRoot } = input;
+        const { name, isolationMode, branchName, worktreePath: customWorktreePath, workspaceRoot } = input;
         const effectiveBranchName = branchName ?? name;
 
         let workingDir = workspaceRoot;
@@ -25,7 +25,14 @@ export class CreateThreadUseCase implements ICreateThreadUseCase {
         let worktreePath: string | undefined;
 
         if (isolationMode === 'worktree') {
-            worktreePath = path.join(path.dirname(workspaceRoot), effectiveBranchName);
+            if (customWorktreePath) {
+                // Resolve relative path to absolute path based on workspaceRoot
+                worktreePath = path.resolve(workspaceRoot, customWorktreePath);
+            } else {
+                const workspaceName = path.basename(workspaceRoot);
+                const worktreeBaseDir = path.join(path.dirname(workspaceRoot), `${workspaceName}.worktree`);
+                worktreePath = path.join(worktreeBaseDir, effectiveBranchName);
+            }
             await this.gitPort.createWorktree(worktreePath, effectiveBranchName, workspaceRoot);
             workingDir = worktreePath;
             branch = effectiveBranchName;

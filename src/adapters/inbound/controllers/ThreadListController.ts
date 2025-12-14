@@ -227,6 +227,7 @@ export class ThreadListController {
                 name: options.name.trim(),
                 isolationMode: options.isolationMode,
                 branchName: options.branchName?.trim(),
+                worktreePath: options.worktreePath?.trim(),
                 workspaceRoot,
             });
 

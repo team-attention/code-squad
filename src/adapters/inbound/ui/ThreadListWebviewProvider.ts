@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { SessionContext } from '../../../application/ports/outbound/SessionContext';
 import { AgentStatus } from '../../../domain/entities/AISession';
 import { IsolationMode } from '../../../application/ports/inbound/ICreateThreadUseCase';
@@ -15,6 +16,7 @@ export interface CreateThreadOptions {
     name: string;
     isolationMode: IsolationMode;
     branchName?: string;
+    worktreePath?: string;
 }
 
 export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
@@ -48,6 +50,7 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
             switch (message.type) {
                 case 'webviewReady':
                     // Webview is ready to receive messages, send initial data
+                    this.sendWorkspaceInfo();
                     this.refresh();
                     break;
                 case 'selectThread':
@@ -58,6 +61,7 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
                         name: message.name,
                         isolationMode: message.isolationMode,
                         branchName: message.branchName,
+                        worktreePath: message.worktreePath,
                     });
                     break;
             }
@@ -76,6 +80,18 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         this.view.webview.postMessage({
             type: 'updateThreads',
             threads
+        });
+    }
+
+    private sendWorkspaceInfo(): void {
+        if (!this.view) return;
+
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        const workspaceName = workspaceRoot ? path.basename(workspaceRoot) : '';
+
+        this.view.webview.postMessage({
+            type: 'workspaceInfo',
+            workspaceName
         });
     }
 
@@ -122,6 +138,9 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         .section-content.collapsed{display:none}
         .form-group{margin-bottom:10px}
         .form-group.hidden{display:none}
+        .form-row{display:flex;gap:8px;margin-bottom:10px}
+        .form-row .form-group{margin-bottom:0;flex:1}
+        .form-row .form-group.isolation{flex:0 0 90px}
         .form-label{display:block;font-size:11px;text-transform:uppercase;color:var(--vscode-descriptionForeground);margin-bottom:4px}
         .form-input,.form-select{width:100%;background:var(--vscode-input-background);border:1px solid var(--vscode-input-border);color:var(--vscode-input-foreground);padding:4px 6px;font-size:13px}
         .form-input:focus,.form-select:focus{outline:none;border-color:var(--vscode-focusBorder)}
@@ -146,20 +165,26 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
             <span class="codicon">▾</span> New Thread
         </div>
         <div class="section-content" id="newContent">
-            <div class="form-group">
-                <label class="form-label">Thread Name</label>
-                <input type="text" class="form-input" id="threadName" placeholder="e.g., feat/add-login">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Isolation</label>
-                <select class="form-select" id="isolationMode">
-                    <option value="none">Local</option>
-                    <option value="worktree">Worktree</option>
-                </select>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Thread Name</label>
+                    <input type="text" class="form-input" id="threadName" placeholder="e.g., feat/add-login">
+                </div>
+                <div class="form-group isolation">
+                    <label class="form-label">Isolation</label>
+                    <select class="form-select" id="isolationMode">
+                        <option value="none">Local</option>
+                        <option value="worktree">Worktree</option>
+                    </select>
+                </div>
             </div>
             <div class="form-group hidden" id="branchGroup">
                 <label class="form-label">Branch Name</label>
                 <input type="text" class="form-input" id="branchName" placeholder="branch-name">
+            </div>
+            <div class="form-group hidden" id="pathGroup">
+                <label class="form-label">Worktree Path</label>
+                <input type="text" class="form-input" id="worktreePath" placeholder="../project.worktree/branch-name">
             </div>
             <button class="submit-button" id="startBtn">Start Thread</button>
         </div>
@@ -178,24 +203,45 @@ const $ = id => document.getElementById(id);
 const threadName = $('threadName');
 const branchName = $('branchName');
 const branchGroup = $('branchGroup');
+const worktreePath = $('worktreePath');
+const pathGroup = $('pathGroup');
 const isolationMode = $('isolationMode');
 const threadList = $('threadList');
+
+let workspaceName = '';
+
+function updateWorktreePath() {
+    if (!worktreePath.dataset.edited && workspaceName) {
+        const branch = branchName.value || threadName.value;
+        worktreePath.value = branch ? '../' + workspaceName + '.worktree/' + branch : '';
+    }
+}
 
 // Sync branch name with thread name
 threadName.addEventListener('input', () => {
     if (!branchName.dataset.edited) {
         branchName.value = threadName.value;
     }
+    updateWorktreePath();
 });
 branchName.addEventListener('input', () => {
     branchName.dataset.edited = branchName.value !== threadName.value ? '1' : '';
+    updateWorktreePath();
+});
+worktreePath.addEventListener('input', () => {
+    const defaultPath = '../' + workspaceName + '.worktree/' + (branchName.value || threadName.value);
+    worktreePath.dataset.edited = worktreePath.value !== defaultPath ? '1' : '';
 });
 
-// Toggle branch name input based on isolation mode
+// Toggle branch name and path inputs based on isolation mode
 isolationMode.addEventListener('change', () => {
     const show = isolationMode.value !== 'none';
     branchGroup.classList.toggle('hidden', !show);
-    if (show && !branchName.value) branchName.value = threadName.value;
+    pathGroup.classList.toggle('hidden', !show);
+    if (show) {
+        if (!branchName.value) branchName.value = threadName.value;
+        updateWorktreePath();
+    }
 });
 
 // Toggle sections
@@ -214,19 +260,24 @@ $('startBtn').addEventListener('click', () => {
     if (!name) { threadName.focus(); return; }
 
     const mode = isolationMode.value;
+    const path = worktreePath.value.trim();
 
     vscode.postMessage({
         type: 'createThread',
         name,
         isolationMode: mode,
-        branchName: mode !== 'none' ? (branchName.value.trim() || name) : undefined
+        branchName: mode !== 'none' ? (branchName.value.trim() || name) : undefined,
+        worktreePath: mode !== 'none' && path ? path : undefined
     });
 
     threadName.value = '';
     branchName.value = '';
     branchName.dataset.edited = '';
+    worktreePath.value = '';
+    worktreePath.dataset.edited = '';
     isolationMode.value = 'none';
     branchGroup.classList.add('hidden');
+    pathGroup.classList.add('hidden');
 });
 
 threadName.addEventListener('keydown', e => { if (e.key === 'Enter') $('startBtn').click(); });
@@ -252,7 +303,10 @@ function render(threads) {
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-window.addEventListener('message', e => { if (e.data.type === 'updateThreads') render(e.data.threads); });
+window.addEventListener('message', e => {
+    if (e.data.type === 'updateThreads') render(e.data.threads);
+    if (e.data.type === 'workspaceInfo') workspaceName = e.data.workspaceName || '';
+});
 
 // Notify extension that webview is ready to receive messages
 vscode.postMessage({ type: 'webviewReady' });

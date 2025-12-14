@@ -185,10 +185,14 @@ export class VscodeGitGateway implements IGitPort {
         });
     }
 
-    async createWorktree(path: string, branch: string, workspaceRoot: string): Promise<void> {
+    async createWorktree(worktreePath: string, branch: string, workspaceRoot: string): Promise<void> {
         return new Promise((resolve, reject) => {
+            // Extract parent directory and create it if needed
+            const parentDir = worktreePath.substring(0, worktreePath.lastIndexOf('/'));
+            const mkdirCmd = parentDir ? `mkdir -p "${parentDir}" && ` : '';
+
             exec(
-                `cd "${workspaceRoot}" && git worktree add "${path}" -b "${branch}"`,
+                `cd "${workspaceRoot}" && ${mkdirCmd}git worktree add "${worktreePath}" -b "${branch}"`,
                 { maxBuffer: 1024 * 1024 },
                 (error) => {
                     if (error) {

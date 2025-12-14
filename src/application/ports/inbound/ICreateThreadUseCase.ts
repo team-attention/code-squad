@@ -6,6 +6,7 @@ export interface CreateThreadInput {
     name: string;
     isolationMode: IsolationMode;
     branchName?: string;
+    worktreePath?: string;
     workspaceRoot: string;
 }
 
