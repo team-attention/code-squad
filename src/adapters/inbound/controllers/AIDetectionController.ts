@@ -391,6 +391,12 @@ export class AIDetectionController {
 
         // ===== SessionContext 생성 및 저장 =====
         const session = AISession.create(type, terminalId);
+        // Set initial status to 'working' since we detected an AI command
+        session.setAgentMetadata({
+            name: threadState?.name ?? session.displayName,
+            status: 'working',
+            fileCount: 0,
+        });
         const submitCommentsCallback = async () => {
             const ctx = this.sessions.get(terminalId);
             if (ctx) {
@@ -705,6 +711,20 @@ export class AIDetectionController {
     }
 
     /**
+     * Detect AI type from terminal name or thread name.
+     */
+    private detectAITypeFromName(name: string): AIType {
+        const lowerName = name.toLowerCase();
+        if (lowerName.includes('codex')) {
+            return 'codex';
+        }
+        if (lowerName.includes('gemini')) {
+            return 'gemini';
+        }
+        return 'claude';
+    }
+
+    /**
      * Attach Sidecar to a terminal by its ID.
      * Used when creating threads via the UI.
      */
@@ -725,7 +745,13 @@ export class AIDetectionController {
             return;
         }
 
-        await this.activateSidecar('claude', terminal);
+        // Detect AI type from terminal name or thread state
+        const threadState = await this.threadStateRepository?.findByTerminalId(terminalId);
+        const nameToCheck = threadState?.name ?? terminal.name;
+        const aiType = this.detectAITypeFromName(nameToCheck);
+        this.log(`🔍 attachToTerminalById: detected aiType=${aiType} from name="${nameToCheck}"`);
+
+        await this.activateSidecar(aiType, terminal);
     }
 
     /**
@@ -818,7 +844,9 @@ export class AIDetectionController {
         // If only one terminal without session, auto-attach
         if (terminalsWithoutSession.length === 1) {
             this.log(`📋 Only one terminal available, auto-attaching`);
-            await this.activateSidecar('claude', terminalsWithoutSession[0].terminal);
+            const t = terminalsWithoutSession[0];
+            const aiType = this.detectAITypeFromName(t.terminal.name);
+            await this.activateSidecar(aiType, t.terminal);
             return;
         }
 
@@ -842,7 +870,8 @@ export class AIDetectionController {
             return;
         }
 
-        // Activate sidecar for this terminal (default to claude)
-        await this.activateSidecar('claude', selected.terminal);
+        // Detect AI type from terminal name and activate
+        const aiType = this.detectAITypeFromName(selected.terminal.name);
+        await this.activateSidecar(aiType, selected.terminal);
     }
 }

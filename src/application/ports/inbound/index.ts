@@ -7,3 +7,4 @@ export { IEditCommentUseCase, EditCommentInput } from './IEditCommentUseCase';
 export { IDeleteCommentUseCase, DeleteCommentInput } from './IDeleteCommentUseCase';
 export { IFetchHNStoriesUseCase, FetchHNStoriesResult } from './IFetchHNStoriesUseCase';
 export { ITrackFileOwnershipUseCase, TrackFileOwnershipInput } from './ITrackFileOwnershipUseCase';
+export { IDetectThreadStatusUseCase, StatusChangeCallback } from './IDetectThreadStatusUseCase';

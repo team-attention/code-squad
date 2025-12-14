@@ -112,7 +112,7 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
             threads.push({
                 id: terminalId,
                 name,
-                status: metadata?.status ?? 'idle',
+                status: metadata?.status ?? 'inactive',
                 fileCount,
                 isSelected: this.selectedId === terminalId
             });
@@ -152,10 +152,13 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         .thread-item.selected{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground)}
         .thread-icon{width:16px;text-align:center;flex-shrink:0}
         .thread-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .thread-status{font-size:11px;color:var(--vscode-descriptionForeground);flex-shrink:0}
-        .thread-status.working{color:var(--vscode-charts-green)}
+        .thread-status{display:flex;align-items:center;justify-content:center;width:20px;height:20px;font-size:12px;flex-shrink:0}
+        .thread-status.inactive{color:var(--vscode-disabledForeground)}
+        .thread-status.idle{color:var(--vscode-foreground)}
+        .thread-status.working{color:var(--vscode-charts-green);animation:spin 1s linear infinite}
         .thread-status.waiting{color:var(--vscode-charts-yellow)}
-        .thread-status.error{color:var(--vscode-charts-red)}
+        @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+        .thread-file-count{font-size:11px;color:var(--vscode-descriptionForeground);flex-shrink:0}
         .empty-msg{padding:8px 12px;color:var(--vscode-descriptionForeground);font-style:italic}
     </style>
 </head>
@@ -282,6 +285,27 @@ $('startBtn').addEventListener('click', () => {
 
 threadName.addEventListener('keydown', e => { if (e.key === 'Enter') $('startBtn').click(); });
 
+// Status icon and title mappings
+function getStatusIcon(status) {
+    switch (status) {
+        case 'inactive': return '\u25CB';  // ○ Empty circle
+        case 'idle': return '\u2500';      // ─ Dash
+        case 'working': return '\u27F3';   // ⟳ Rotating arrow
+        case 'waiting': return '?';        // ? Question mark
+        default: return '\u25CB';
+    }
+}
+
+function getStatusTitle(status) {
+    switch (status) {
+        case 'inactive': return 'No AI agent';
+        case 'idle': return 'AI idle - ready for input';
+        case 'working': return 'AI working...';
+        case 'waiting': return 'AI waiting for answer';
+        default: return '';
+    }
+}
+
 // Render threads
 function render(threads) {
     if (!threads.length) {
@@ -290,9 +314,9 @@ function render(threads) {
     }
     threadList.innerHTML = threads.map(t =>
         '<div class="thread-item' + (t.isSelected ? ' selected' : '') + '" data-id="' + t.id + '">' +
-        '<span class="thread-icon">🤖</span>' +
+        '<span class="thread-status ' + t.status + '" title="' + getStatusTitle(t.status) + '">' + getStatusIcon(t.status) + '</span>' +
         '<span class="thread-name">' + esc(t.name) + '</span>' +
-        '<span class="thread-status ' + t.status + '">' + t.status + '</span>' +
+        '<span class="thread-file-count">' + t.fileCount + '</span>' +
         '</div>'
     ).join('');
 

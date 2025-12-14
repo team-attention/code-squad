@@ -7,6 +7,7 @@ export { EditCommentUseCase } from './EditCommentUseCase';
 export { DeleteCommentUseCase } from './DeleteCommentUseCase';
 export { FetchHNStoriesUseCase } from './FetchHNStoriesUseCase';
 export { TrackFileOwnershipUseCase } from './TrackFileOwnershipUseCase';
+export { DetectThreadStatusUseCase } from './DetectThreadStatusUseCase';
 
 // Re-export from ports for backward compatibility
 export { AddCommentInput } from '../ports/inbound/IAddCommentUseCase';

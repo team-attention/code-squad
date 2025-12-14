@@ -1,4 +1,5 @@
 export type TerminalActivityCallback = (terminalId: string, hasActivity: boolean) => void;
+export type TerminalOutputCallback = (terminalId: string, data: string) => void;
 
 export interface ITerminalPort {
     sendText(terminalId: string, text: string): void;
@@ -10,4 +11,10 @@ export interface ITerminalPort {
      * Called with hasActivity=false after a period of inactivity (AI idle).
      */
     onTerminalActivity(callback: TerminalActivityCallback): void;
+    /**
+     * Register a callback to receive terminal output data.
+     * Called with raw output data from terminal shell execution.
+     * Requires shell integration enabled in the terminal.
+     */
+    onTerminalOutput(callback: TerminalOutputCallback): void;
 }

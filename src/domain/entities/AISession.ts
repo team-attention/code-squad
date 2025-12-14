@@ -1,6 +1,6 @@
 export type AIType = 'claude' | 'codex' | 'gemini';
 
-export type AgentStatus = 'working' | 'idle' | 'waiting' | 'error';
+export type AgentStatus = 'inactive' | 'idle' | 'working' | 'waiting';
 
 export interface AgentMetadata {
     name: string;
@@ -46,7 +46,7 @@ export class AISession {
     }
 
     get agentStatus(): AgentStatus {
-        return this._agentMetadata?.status ?? 'idle';
+        return this._agentMetadata?.status ?? 'inactive';
     }
 
     static create(type: AIType, terminalId: string): AISession {

@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
-import { ITerminalPort, TerminalActivityCallback } from '../../../application/ports/outbound/ITerminalPort';
+import { ITerminalPort, TerminalActivityCallback, TerminalOutputCallback } from '../../../application/ports/outbound/ITerminalPort';
 
 export class VscodeTerminalGateway implements ITerminalPort {
     private terminals = new Map<string, vscode.Terminal>();
     private terminalToId = new Map<vscode.Terminal, string>();
     private activityCallbacks: TerminalActivityCallback[] = [];
+    private outputCallbacks: TerminalOutputCallback[] = [];
     private isActive = new Map<string, boolean>();
     private disposables: vscode.Disposable[] = [];
 
@@ -15,6 +16,8 @@ export class VscodeTerminalGateway implements ITerminalPort {
                 const terminalId = this.terminalToId.get(e.terminal);
                 if (terminalId) {
                     this.setActivity(terminalId, true);
+                    // Read terminal output stream
+                    this.readOutputStream(terminalId, e.execution);
                 }
             })
         );
@@ -27,6 +30,26 @@ export class VscodeTerminalGateway implements ITerminalPort {
                 }
             })
         );
+    }
+
+    private async readOutputStream(
+        terminalId: string,
+        execution: vscode.TerminalShellExecution
+    ): Promise<void> {
+        try {
+            const stream = execution.read();
+            for await (const data of stream) {
+                this.notifyOutput(terminalId, data);
+            }
+        } catch {
+            // Stream ended or error - ignore
+        }
+    }
+
+    private notifyOutput(terminalId: string, data: string): void {
+        for (const callback of this.outputCallbacks) {
+            callback(terminalId, data);
+        }
     }
 
     private setActivity(terminalId: string, hasActivity: boolean): void {
@@ -45,6 +68,10 @@ export class VscodeTerminalGateway implements ITerminalPort {
 
     onTerminalActivity(callback: TerminalActivityCallback): void {
         this.activityCallbacks.push(callback);
+    }
+
+    onTerminalOutput(callback: TerminalOutputCallback): void {
+        this.outputCallbacks.push(callback);
     }
 
     registerTerminal(id: string, terminal: vscode.Terminal): void {

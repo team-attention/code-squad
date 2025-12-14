@@ -2,12 +2,14 @@ import * as vscode from 'vscode';
 
 // Domain
 import { DiffService } from './domain/services/DiffService';
+import { TerminalStatusDetector } from './domain/services/TerminalStatusDetector';
 
 // Application - Use Cases
 import { SubmitCommentsUseCase } from './application/useCases/SubmitCommentsUseCase';
 import { CreateThreadUseCase } from './application/useCases/CreateThreadUseCase';
 import { ManageWhitelistUseCase } from './application/useCases/ManageWhitelistUseCase';
 import { TrackFileOwnershipUseCase } from './application/useCases/TrackFileOwnershipUseCase';
+import { DetectThreadStatusUseCase } from './application/useCases/DetectThreadStatusUseCase';
 
 // Adapters - Inbound (Controllers)
 import { AIDetectionController } from './adapters/inbound/controllers/AIDetectionController';
@@ -48,6 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // ===== Domain Layer =====
     const diffService = new DiffService();
+    const terminalStatusDetector = new TerminalStatusDetector();
 
     // ===== Adapters Layer - Gateways =====
     const terminalGateway = new VscodeTerminalGateway();
@@ -78,6 +81,7 @@ export function activate(context: vscode.ExtensionContext) {
     );
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const manageWhitelistUseCase = new ManageWhitelistUseCase(threadStateRepository);
+    const detectThreadStatusUseCase = new DetectThreadStatusUseCase(terminalStatusDetector);
 
     // ===== Adapters Layer - Controllers =====
     const aiDetectionController = new AIDetectionController(
@@ -120,21 +124,47 @@ export function activate(context: vscode.ExtensionContext) {
         threadListController.refresh();
     });
 
-    // Connect terminal activity to update session status
-    terminalGateway.onTerminalActivity((terminalId, hasActivity) => {
+    // Connect terminal output to status detection
+    terminalGateway.onTerminalOutput((terminalId, data) => {
         const sessions = aiDetectionController.getSessions();
         const session = sessions.get(terminalId);
         if (session) {
-            // Update status: running when active, idle when inactive
-            const status = hasActivity ? 'working' : 'idle';
+            detectThreadStatusUseCase.processOutput(terminalId, session.session.type, data);
+        }
+    });
+
+    // Subscribe to status changes from pattern-based detection
+    detectThreadStatusUseCase.onStatusChange((terminalId, status) => {
+        const sessions = aiDetectionController.getSessions();
+        const session = sessions.get(terminalId);
+        if (session) {
             const currentMetadata = session.session.agentMetadata;
             session.session.setAgentMetadata({
                 name: currentMetadata?.name ?? session.session.displayName,
                 status,
                 fileCount: currentMetadata?.fileCount ?? 0,
             });
-            // Refresh thread list to show updated status
             threadListController.refresh();
+        }
+    });
+
+    // Fallback: use activity-based detection when shell integration isn't available
+    terminalGateway.onTerminalActivity((terminalId, hasActivity) => {
+        const sessions = aiDetectionController.getSessions();
+        const session = sessions.get(terminalId);
+        if (session) {
+            // Only use activity-based status if no pattern-based status is available
+            const currentStatus = detectThreadStatusUseCase.getStatus(terminalId);
+            if (currentStatus === 'inactive') {
+                const status = hasActivity ? 'working' : 'idle';
+                const currentMetadata = session.session.agentMetadata;
+                session.session.setAgentMetadata({
+                    name: currentMetadata?.name ?? session.session.displayName,
+                    status,
+                    fileCount: currentMetadata?.fileCount ?? 0,
+                });
+                threadListController.refresh();
+            }
         }
     });
 
