@@ -4,7 +4,7 @@
 
 <br />
 
-**Manage multiple AI agents in VS Code.**
+**Building with AI, the right way.**
 
 
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/JakePark/code-squad?label=Downloads&color=teal)](https://open-vsx.org/extension/JakePark/code-squad)
@@ -17,11 +17,13 @@
 
 ## Why Code Squad?
 
-Running multiple AI agents at once is chaos. Terminals pile up, context gets lost, changes overlap.
+Vibe coding is amazing... until you review the changes.
 
-**Code Squad brings order.**
+AI writes fast. Too fast. Files pile up, changes scatter everywhere. And now you're running multiple agents at once — terminals everywhere, context lost, changes overlapping.
 
-Create isolated agent sessions, track their status in real-time, review changes per agent, and switch between them instantly.
+**Code Squad keeps the conversation going.**
+
+One seamless flow — talk to AI, review what it built, give feedback, keep building. Now with support for multiple agents running in parallel, each in its own isolated workspace.
 
 ---
 
