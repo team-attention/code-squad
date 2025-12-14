@@ -56,10 +56,6 @@ export class VscodeTerminalGateway implements ITerminalPort {
         try {
             const stream = execution.read();
             for await (const data of stream) {
-                // Strip ANSI codes for preview
-                // eslint-disable-next-line no-control-regex
-                const preview = data.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').substring(0, 80);
-                this.log(`📥 Output: id=${terminalId}, len=${data.length}, preview="${preview}"`);
                 this.notifyOutput(terminalId, data);
             }
             this.log(`📖 readOutputStream ended: id=${terminalId}`);

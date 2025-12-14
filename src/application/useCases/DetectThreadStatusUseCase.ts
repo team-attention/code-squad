@@ -4,57 +4,76 @@ import { IDetectThreadStatusUseCase, StatusChangeCallback } from '../ports/inbou
 
 interface TerminalState {
     status: AgentStatus;
-    buffer: string[];
     lastUpdate: number;
-    debounceTimer?: ReturnType<typeof setTimeout>;
+    idleTimer?: ReturnType<typeof setTimeout>;
 }
 
 export class DetectThreadStatusUseCase implements IDetectThreadStatusUseCase {
     private states = new Map<string, TerminalState>();
     private callbacks: StatusChangeCallback[] = [];
 
-    // Time to wait after last output before checking for idle
-    private static IDLE_DEBOUNCE_MS = 500;
-    private static BUFFER_LINES = 10;
+    // Time to wait after last working pattern before switching to idle
+    private static IDLE_TIMEOUT_MS = 2000;
 
     constructor(private detector: ITerminalStatusDetector) {}
 
     processOutput(terminalId: string, aiType: AIType, output: string): void {
         const state = this.getOrCreateState(terminalId);
 
-        // Add new lines to buffer
-        const newLines = output.split('\n');
-        state.buffer.push(...newLines);
-        state.buffer = state.buffer.slice(-DetectThreadStatusUseCase.BUFFER_LINES);
+        // Check current output for patterns
+        const detectedStatus = this.detector.detect(aiType, output);
 
-        // Activity-based detection: output received = working
-        // Set to 'working' immediately if not already working
-        if (state.status !== 'working') {
-            state.status = 'working';
-            state.lastUpdate = Date.now();
-            this.notifyChange(terminalId, 'working');
+        // Clear any pending idle timer
+        if (state.idleTimer) {
+            clearTimeout(state.idleTimer);
+            state.idleTimer = undefined;
         }
 
-        // Reset debounce timer for idle detection
-        if (state.debounceTimer) {
-            clearTimeout(state.debounceTimer);
-        }
-
-        // After output stops, check for idle/waiting patterns
-        state.debounceTimer = setTimeout(() => {
-            const detectedStatus = this.detector.detectFromBuffer(aiType, state.buffer);
-
-            // Only transition to idle or waiting (not to 'inactive')
-            if (detectedStatus === 'idle' || detectedStatus === 'waiting') {
-                if (state.status !== detectedStatus) {
-                    state.status = detectedStatus;
-                    state.lastUpdate = Date.now();
-                    this.notifyChange(terminalId, detectedStatus);
-                }
+        // waiting = user action required, show immediately
+        if (detectedStatus === 'waiting') {
+            if (state.status !== 'waiting') {
+                state.status = 'waiting';
+                state.lastUpdate = Date.now();
+                this.notifyChange(terminalId, 'waiting');
             }
-            // If no pattern matched but output stopped, assume still working
-            // (might be waiting for slow response)
-        }, DetectThreadStatusUseCase.IDLE_DEBOUNCE_MS);
+            return;
+        }
+
+        // working pattern found (e.g., "Esc to interrupt", spinner)
+        if (detectedStatus === 'working') {
+            if (state.status !== 'working') {
+                state.status = 'working';
+                state.lastUpdate = Date.now();
+                this.notifyChange(terminalId, 'working');
+            }
+            // Schedule idle check - if no more working patterns, go idle
+            state.idleTimer = setTimeout(() => {
+                if (state.status === 'working') {
+                    state.status = 'idle';
+                    state.lastUpdate = Date.now();
+                    this.notifyChange(terminalId, 'idle');
+                }
+            }, DetectThreadStatusUseCase.IDLE_TIMEOUT_MS);
+            return;
+        }
+
+        // idle pattern found (explicit prompt patterns)
+        if (detectedStatus === 'idle') {
+            if (state.status !== 'idle') {
+                state.status = 'idle';
+                state.lastUpdate = Date.now();
+                this.notifyChange(terminalId, 'idle');
+            }
+            return;
+        }
+
+        // No waiting/working/idle pattern = stay in current state or go idle
+        // Only transition to idle from inactive or working (not from waiting)
+        if (state.status === 'inactive' || state.status === 'working') {
+            state.status = 'idle';
+            state.lastUpdate = Date.now();
+            this.notifyChange(terminalId, 'idle');
+        }
     }
 
     getStatus(terminalId: string): AgentStatus {
@@ -67,8 +86,8 @@ export class DetectThreadStatusUseCase implements IDetectThreadStatusUseCase {
 
     clear(terminalId: string): void {
         const state = this.states.get(terminalId);
-        if (state?.debounceTimer) {
-            clearTimeout(state.debounceTimer);
+        if (state?.idleTimer) {
+            clearTimeout(state.idleTimer);
         }
         this.states.delete(terminalId);
     }
@@ -76,9 +95,7 @@ export class DetectThreadStatusUseCase implements IDetectThreadStatusUseCase {
     private getOrCreateState(terminalId: string): TerminalState {
         if (!this.states.has(terminalId)) {
             this.states.set(terminalId, {
-                // Start as 'inactive' - actual status determined by pattern detection
                 status: 'inactive',
-                buffer: [],
                 lastUpdate: Date.now(),
             });
         }

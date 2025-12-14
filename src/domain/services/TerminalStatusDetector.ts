@@ -11,14 +11,17 @@ export interface ITerminalStatusDetector {
     detectFromBuffer(aiType: AIType, lines: string[]): AgentStatus;
 }
 
-// Activity-based detection: 'working' is detected by output activity, not patterns
-// Only 'waiting' and 'idle' patterns are needed
+// Status detection rules:
+// - waiting: user input required (highest priority)
+// - working: "Esc to interrupt/cancel" visible
+// - idle: neither waiting nor working (determined by debounce)
 
 const CLAUDE_PATTERNS: StatusPattern[] = [
     {
         status: 'waiting',
         priority: 2,
         patterns: [
+            /1\.\s*Yes,\s*allow/i,           // Confirmation menu
             /Enter to select/,
             /\(y\/n\)/i,
             /\[Y\/n\]/i,
@@ -26,17 +29,23 @@ const CLAUDE_PATTERNS: StatusPattern[] = [
             /Tab\/Arrow keys/,
             /Press Enter to continue/,
             /Do you want to proceed\?/i,
+            /Do you want to/i,
+        ],
+    },
+    {
+        status: 'working',
+        priority: 1,
+        patterns: [
+            /Esc to interrupt/i,
         ],
     },
     {
         status: 'idle',
-        priority: 1,
+        priority: 0,
         patterns: [
-            // Claude Code prompt: "> " at end of line
-            /^>\s*$/m,
-            // Vim modes (when in editor)
-            /-- INSERT --/,
-            /-- NORMAL --/,
+            /^>\s*$/,                         // Prompt (> )
+            /--\s*INSERT\s*--/,               // INSERT mode
+            /--\s*NORMAL\s*--/,               // NORMAL mode
         ],
     },
 ];
@@ -46,23 +55,26 @@ const CODEX_PATTERNS: StatusPattern[] = [
         status: 'waiting',
         priority: 2,
         patterns: [
+            /1\.\s*Yes,\s*allow/i,           // Confirmation menu
             /\(y\/n\)/i,
             /\[Y\/n\]/i,
-            // Removed broad /Confirm/i - causes false positives in AI responses
+        ],
+    },
+    {
+        status: 'working',
+        priority: 1,
+        patterns: [
+            /Esc to interrupt/i,              // "Working (1s • Esc to interrupt)"
         ],
     },
     {
         status: 'idle',
-        priority: 1,
+        priority: 0,
         patterns: [
-            // Codex input prompt (cursor character after pipe)
-            /[│|]\s*[▌▍▎▏█⎸▏]/,      // "| ▌" input cursor prompt
-            // Codex prompt hints (various arrow chars: ⮐ ⏎ ↵ ← ⇦)
-            /[⮐⏎↵←⇦]\s*send/,        // "⮐ send" hint at bottom of Codex prompt
-            /\^J\s*newline/,          // "^J newline" hint
-            /\^C\s*quit/,             // "^C quit" hint
-            /To get started/,         // Welcome message
-            /OpenAI Codex/,           // Header banner
+            /[│|]\s*▌/,                       // Input cursor (box drawing or pipe)
+            /⮐\s*send/,                       // Send hint
+            /To get started,?\s*describe/i,   // Welcome message
+            />_\s*OpenAI\s*Codex/i,           // Header banner
         ],
     },
 ];
@@ -74,21 +86,29 @@ const GEMINI_PATTERNS: StatusPattern[] = [
         patterns: [
             /\(y\/n\)/i,
             /\[Y\/n\]/i,
-            // Removed broad /Confirm/i - causes false positives in AI responses
-            /Waiting for user/i,           // "Waiting for user confirmation..."
-            /Allow execution/i,             // "Allow execution of: 'command'?"
-            /Enter to select/i,             // Selection prompt
-            /Press Enter/i,                 // Any Enter prompt
+            /1\.\s*Yes,\s*allow once/i,      // Gemini confirmation menu
+            /Waiting for user/i,
+            /Allow execution/i,
+            /Yes, allow/i,
+            /suggest changes/i,
+            /Enter to select/i,
+            /Press Enter/i,
+            /Do you want to/i,
+        ],
+    },
+    {
+        status: 'working',
+        priority: 1,
+        patterns: [
+            /esc to cancel/i,                 // "(esc to cancel, 1s)"
         ],
     },
     {
         status: 'idle',
-        priority: 1,
+        priority: 0,
         patterns: [
-            // Gemini prompt hints
-            /Type your message/,      // "Type your message" prompt hint
-            /@path\/to\/file/,        // "@path/to/file" hint
-            /Tips for getting started/,  // Welcome message
+            />\s*Type your message/i,         // Input prompt
+            /Tips for getting started/i,      // Welcome tips
         ],
     },
 ];
@@ -98,16 +118,16 @@ const GENERIC_PATTERNS: StatusPattern[] = [
         status: 'waiting',
         priority: 2,
         patterns: [
+            /1\.\s*Yes,\s*allow/i,           // Confirmation menu
             /\(y\/n\)/i,
             /\[Y\/n\]/i,
         ],
     },
     {
-        status: 'idle',
+        status: 'working',
         priority: 1,
         patterns: [
-            /^>\s*$/m,
-            /\$\s*$/m,
+            /Esc to interrupt/i,
         ],
     },
 ];
