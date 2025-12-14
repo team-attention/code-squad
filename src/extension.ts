@@ -111,6 +111,24 @@ export function activate(context: vscode.ExtensionContext) {
         threadListController.refresh();
     });
 
+    // Connect terminal activity to update session status
+    terminalGateway.onTerminalActivity((terminalId, hasActivity) => {
+        const sessions = aiDetectionController.getSessions();
+        const session = sessions.get(terminalId);
+        if (session) {
+            // Update status: running when active, idle when inactive
+            const status = hasActivity ? 'working' : 'idle';
+            const currentMetadata = session.session.agentMetadata;
+            session.session.setAgentMetadata({
+                name: currentMetadata?.name ?? session.session.displayName,
+                status,
+                fileCount: currentMetadata?.fileCount ?? 0,
+            });
+            // Refresh thread list to show updated status
+            threadListController.refresh();
+        }
+    });
+
     // Activate Controllers
     aiDetectionController.activate(context);
     fileWatchController.activate(context);

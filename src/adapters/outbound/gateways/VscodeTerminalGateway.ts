@@ -1,9 +1,51 @@
 import * as vscode from 'vscode';
-import { ITerminalPort } from '../../../application/ports/outbound/ITerminalPort';
+import { ITerminalPort, TerminalActivityCallback } from '../../../application/ports/outbound/ITerminalPort';
 
 export class VscodeTerminalGateway implements ITerminalPort {
     private terminals = new Map<string, vscode.Terminal>();
     private terminalToId = new Map<vscode.Terminal, string>();
+    private activityCallbacks: TerminalActivityCallback[] = [];
+    private isActive = new Map<string, boolean>();
+    private disposables: vscode.Disposable[] = [];
+
+    constructor() {
+        // Listen for terminal shell execution start/end
+        this.disposables.push(
+            vscode.window.onDidStartTerminalShellExecution((e) => {
+                const terminalId = this.terminalToId.get(e.terminal);
+                if (terminalId) {
+                    this.setActivity(terminalId, true);
+                }
+            })
+        );
+
+        this.disposables.push(
+            vscode.window.onDidEndTerminalShellExecution((e) => {
+                const terminalId = this.terminalToId.get(e.terminal);
+                if (terminalId) {
+                    this.setActivity(terminalId, false);
+                }
+            })
+        );
+    }
+
+    private setActivity(terminalId: string, hasActivity: boolean): void {
+        const wasActive = this.isActive.get(terminalId) ?? false;
+        if (wasActive !== hasActivity) {
+            this.isActive.set(terminalId, hasActivity);
+            this.notifyActivity(terminalId, hasActivity);
+        }
+    }
+
+    private notifyActivity(terminalId: string, hasActivity: boolean): void {
+        for (const callback of this.activityCallbacks) {
+            callback(terminalId, hasActivity);
+        }
+    }
+
+    onTerminalActivity(callback: TerminalActivityCallback): void {
+        this.activityCallbacks.push(callback);
+    }
 
     registerTerminal(id: string, terminal: vscode.Terminal): void {
         this.terminals.set(id, terminal);
@@ -16,6 +58,9 @@ export class VscodeTerminalGateway implements ITerminalPort {
             this.terminalToId.delete(terminal);
         }
         this.terminals.delete(id);
+
+        // Clean up activity tracking
+        this.isActive.delete(id);
     }
 
     getTerminal(id: string): vscode.Terminal | undefined {

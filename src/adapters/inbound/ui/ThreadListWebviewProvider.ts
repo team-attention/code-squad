@@ -147,7 +147,7 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         .form-input::placeholder{color:var(--vscode-input-placeholderForeground)}
         .submit-button{width:100%;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;padding:6px 12px;font-size:13px;cursor:pointer;margin-top:8px}
         .submit-button:hover{background:var(--vscode-button-hoverBackground)}
-        .thread-item{display:flex;align-items:center;gap:8px;padding:4px 12px;cursor:pointer}
+        .thread-item{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer}
         .thread-item:hover{background:var(--vscode-list-hoverBackground)}
         .thread-item.selected{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground)}
         .thread-icon{width:16px;text-align:center;flex-shrink:0}
