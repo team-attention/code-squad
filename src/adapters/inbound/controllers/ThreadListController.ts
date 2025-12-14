@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { SessionContext } from '../../../application/ports/outbound/SessionContext';
 import { ThreadListWebviewProvider, CreateThreadOptions } from '../ui/ThreadListWebviewProvider';
 import { SidecarPanelAdapter } from '../ui/SidecarPanelAdapter';
@@ -6,6 +7,8 @@ import { ITerminalPort } from '../../../application/ports/outbound/ITerminalPort
 import { ICreateThreadUseCase, IsolationMode } from '../../../application/ports/inbound/ICreateThreadUseCase';
 import { FileWatchController } from './FileWatchController';
 import { ICommentRepository } from '../../../application/ports/outbound/ICommentRepository';
+import { IGitPort } from '../../../application/ports/outbound/IGitPort';
+import { FileInfo } from '../../../application/ports/outbound/PanelState';
 
 export class ThreadListController {
     private webviewProvider: ThreadListWebviewProvider | undefined;
@@ -18,7 +21,8 @@ export class ThreadListController {
         private readonly createThreadUseCase?: ICreateThreadUseCase,
         private readonly attachSidecar?: (terminalId: string) => Promise<void>,
         private readonly fileWatchController?: FileWatchController,
-        private readonly commentRepository?: ICommentRepository
+        private readonly commentRepository?: ICommentRepository,
+        private readonly gitPort?: IGitPort
     ) {}
 
     activate(context: vscode.ExtensionContext): void {
@@ -52,6 +56,8 @@ export class ThreadListController {
     /**
      * Select a thread by ID.
      * Applies thread's whitelist patterns and filters comments.
+     * Switches the single panel to display this thread's state.
+     * Refreshes file list from git status for the thread's workspaceRoot.
      */
     async selectThread(id: string): Promise<void> {
         const sessions = this.getSessions();
@@ -81,6 +87,16 @@ export class ThreadListController {
         // Set threadId on state manager
         context.stateManager.setThreadId(threadState?.threadId);
 
+        // Determine effective workspaceRoot for this thread
+        // Priority: threadState.worktreePath > context.workspaceRoot
+        const effectiveWorkspaceRoot = threadState?.worktreePath || context.workspaceRoot;
+
+        // Update generateDiffUseCase to use the correct workspaceRoot
+        context.generateDiffUseCase.setWorkspaceRoot(effectiveWorkspaceRoot);
+
+        // Refresh file list from git status for this thread's workspaceRoot
+        await this.refreshFilesForSession(context, effectiveWorkspaceRoot);
+
         // Filter and set comments for this thread
         if (this.commentRepository && threadState) {
             const comments = await this.commentRepository.findByThreadId(threadState.threadId);
@@ -104,10 +120,50 @@ export class ThreadListController {
         // Show terminal for this session
         this.terminalGateway.showTerminal(id);
 
-        // Show panel for this session
-        const panel = SidecarPanelAdapter.getPanel(id);
+        // Switch single panel to this session's context
+        const panel = SidecarPanelAdapter.currentPanel;
         if (panel) {
+            panel.switchToSession(
+                id,
+                effectiveWorkspaceRoot, // Use worktreePath if available
+                context.generateDiffUseCase,
+                context.addCommentUseCase,
+                context.submitComments,
+                context.stateManager
+            );
             panel.show();
+        }
+    }
+
+    /**
+     * Refresh file list from git status for a session's workspaceRoot.
+     * This ensures worktree files are properly displayed when switching threads.
+     */
+    private async refreshFilesForSession(context: SessionContext, workspaceRoot: string): Promise<void> {
+        if (!this.gitPort || !workspaceRoot) {
+            console.log(`[Sidecar] Cannot refresh files: gitPort=${!!this.gitPort}, workspaceRoot=${workspaceRoot}`);
+            return;
+        }
+
+        try {
+            console.log(`[Sidecar] Refreshing files for ${context.terminalId} from ${workspaceRoot}`);
+
+            // Get uncommitted files from git for this session's workspaceRoot
+            const uncommittedFiles = await this.gitPort.getUncommittedFilesWithStatus(workspaceRoot);
+
+            // Convert to FileInfo format
+            const fileInfos: FileInfo[] = uncommittedFiles.map(f => ({
+                path: f.path,
+                name: path.basename(f.path),
+                status: f.status,
+            }));
+
+            // Update baseline with current uncommitted files
+            context.stateManager.setBaseline(fileInfos);
+
+            console.log(`[Sidecar] Refreshed files for ${context.terminalId}: ${fileInfos.length} files from ${workspaceRoot}`);
+        } catch (error) {
+            console.error(`[Sidecar] Failed to refresh files for session ${context.terminalId}:`, error);
         }
     }
 

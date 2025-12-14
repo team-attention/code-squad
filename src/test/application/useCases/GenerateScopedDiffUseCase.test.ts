@@ -8,6 +8,7 @@ import { DiffResult } from '../../../domain/entities/Diff';
 
 class MockGenerateDiffUseCase implements IGenerateDiffUseCase {
     private result: DiffResult | null = null;
+    private workspaceRoot: string | undefined;
 
     async execute(_relativePath: string): Promise<DiffResult | null> {
         return this.result;
@@ -15,6 +16,14 @@ class MockGenerateDiffUseCase implements IGenerateDiffUseCase {
 
     setResult(result: DiffResult | null): void {
         this.result = result;
+    }
+
+    setWorkspaceRoot(workspaceRoot: string | undefined): void {
+        this.workspaceRoot = workspaceRoot;
+    }
+
+    getWorkspaceRoot(): string | undefined {
+        return this.workspaceRoot;
     }
 }
 

@@ -15,7 +15,6 @@ import { ClaudeCodeConfigController } from './adapters/inbound/controllers/Claud
 import { ThreadListController } from './adapters/inbound/controllers/ThreadListController';
 
 // Adapters - Inbound (UI)
-import { SidecarPanelAdapter } from './adapters/inbound/ui/SidecarPanelAdapter';
 import {
     VscodeTerminalGateway,
     VscodeFileSystemGateway,
@@ -94,6 +93,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Connect controllers for worktree support
     aiDetectionController.setFileWatchController(fileWatchController);
+    aiDetectionController.setThreadStateRepository(threadStateRepository);
 
     // Thread List Controller (after AIDetectionController)
     const threadListController = new ThreadListController(
@@ -102,7 +102,8 @@ export function activate(context: vscode.ExtensionContext) {
         createThreadUseCase,
         (terminalId) => aiDetectionController.attachToTerminalById(terminalId),
         fileWatchController,
-        commentRepository
+        commentRepository,
+        gitGateway
     );
 
     // Connect AIDetectionController to notify ThreadListController on session changes
@@ -136,10 +137,6 @@ export function activate(context: vscode.ExtensionContext) {
     // Register controller dispose for cleanup
     context.subscriptions.push({ dispose: () => fileWatchController.dispose() });
     context.subscriptions.push({ dispose: () => threadListController.dispose() });
-
-    // Start panel cleanup interval
-    SidecarPanelAdapter.startCleanupInterval();
-    context.subscriptions.push({ dispose: () => SidecarPanelAdapter.stopCleanupInterval() });
 
     // ===== Commands =====
 

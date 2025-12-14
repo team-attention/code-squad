@@ -6,13 +6,32 @@ import { IGitPort } from '../ports/outbound/IGitPort';
 import { IGenerateDiffUseCase } from '../ports/inbound/IGenerateDiffUseCase';
 
 export class GenerateDiffUseCase implements IGenerateDiffUseCase {
+    private workspaceRootOverride?: string;
+
     constructor(
         private readonly snapshotRepository: ISnapshotRepository,
         private readonly fileSystemPort: IFileSystemPort,
         private readonly gitPort: IGitPort,
         private readonly diffService: DiffService,
-        private readonly workspaceRootOverride?: string
-    ) {}
+        workspaceRootOverride?: string
+    ) {
+        this.workspaceRootOverride = workspaceRootOverride;
+    }
+
+    /**
+     * Set workspace root for worktree support.
+     * Call this when switching to a different worktree.
+     */
+    setWorkspaceRoot(workspaceRoot: string | undefined): void {
+        this.workspaceRootOverride = workspaceRoot;
+    }
+
+    /**
+     * Get current workspace root.
+     */
+    getWorkspaceRoot(): string | undefined {
+        return this.workspaceRootOverride || this.fileSystemPort.getWorkspaceRoot();
+    }
 
     async execute(relativePath: string): Promise<DiffResult | null> {
         // 세션별 workspaceRoot 우선 사용 (worktree 지원)

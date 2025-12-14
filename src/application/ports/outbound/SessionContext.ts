@@ -38,6 +38,9 @@ export interface SessionContext {
     /** 패널 dispose 콜백 (AIDetectionController에서 설정) */
     disposePanel: () => void;
 
+    /** 코멘트 제출 콜백 (싱글 패널 아키텍처용) */
+    submitComments: () => Promise<void>;
+
     /** 에이전트 메타데이터 (멀티 에이전트 지원용) */
     agentMetadata?: AgentMetadata;
 

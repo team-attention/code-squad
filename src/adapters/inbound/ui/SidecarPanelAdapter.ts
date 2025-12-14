@@ -18,60 +18,27 @@ import { getWebviewContent } from './webview';
  *
  * Handles user interactions from webview and calls UseCases.
  * Receives state updates via callback and renders to webview.
+ *
+ * Single Panel Architecture:
+ * - Only one panel exists at a time (singleton)
+ * - Panel switches between sessions via switchToSession()
+ * - Each session maintains its own StateManager
+ * - Panel connects to the focused session's StateManager
  */
 export class SidecarPanelAdapter {
-    /** 활성 패널 추적 (terminalId → adapter) */
-    private static activePanels = new Map<string, SidecarPanelAdapter>();
+    /** Single panel instance (singleton) */
+    private static instance: SidecarPanelAdapter | undefined;
 
-    /** Stale panel cleanup interval */
-    private static cleanupInterval: NodeJS.Timeout | null = null;
-    private static readonly PANEL_CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+    /** Current session's terminal ID */
+    private currentTerminalId: string | undefined;
 
-    /** Start periodic cleanup of stale panels */
-    public static startCleanupInterval(): void {
-        if (SidecarPanelAdapter.cleanupInterval) return;
-
-        SidecarPanelAdapter.cleanupInterval = setInterval(() => {
-            SidecarPanelAdapter.cleanupStalePanels();
-        }, SidecarPanelAdapter.PANEL_CLEANUP_INTERVAL_MS);
-    }
-
-    /** Stop periodic cleanup */
-    public static stopCleanupInterval(): void {
-        if (SidecarPanelAdapter.cleanupInterval) {
-            clearInterval(SidecarPanelAdapter.cleanupInterval);
-            SidecarPanelAdapter.cleanupInterval = null;
-        }
-    }
-
-    /** Remove any stale panels from the map */
-    private static cleanupStalePanels(): void {
-        for (const [terminalId, adapter] of SidecarPanelAdapter.activePanels) {
-            if (!adapter.isActive()) {
-                SidecarPanelAdapter.activePanels.delete(terminalId);
-                try {
-                    adapter.dispose();
-                } catch (e) {
-                    // Already disposed, ignore
-                }
-            }
-        }
-    }
-
-    /** 싱글톤 호환용 - 마지막 활성 패널 (deprecated, 마이그레이션용) */
+    /** Get the singleton panel instance */
     public static get currentPanel(): SidecarPanelAdapter | undefined {
-        // Avoid Array.from() - iterate directly to get last panel
-        let lastPanel: SidecarPanelAdapter | undefined;
-        for (const panel of SidecarPanelAdapter.activePanels.values()) {
-            lastPanel = panel;
-        }
-        return lastPanel;
+        return SidecarPanelAdapter.instance;
     }
 
     private readonly panel: vscode.WebviewPanel;
     private readonly context: vscode.ExtensionContext;
-    private readonly terminalId: string;
-    private readonly workspaceRoot: string | undefined;
     private disposables: vscode.Disposable[] = [];
     private onDisposeCallback: (() => void) | undefined;
 
@@ -85,25 +52,20 @@ export class SidecarPanelAdapter {
     private onSubmitComments: (() => Promise<void>) | undefined;
     private panelStateManager: IPanelStateManager | undefined;
     private symbolPort: ISymbolPort | undefined;
+    private workspaceRoot: string | undefined;
 
     /**
-     * 새 패널 생성 (터미널별 독립)
+     * Get or create the singleton panel.
+     * If panel already exists, just returns it.
      */
-    public static createNew(
-        context: vscode.ExtensionContext,
-        terminalId: string,
-        workspaceRoot?: string
-    ): SidecarPanelAdapter {
-        // 이미 이 터미널에 패널이 있으면 반환
-        const existing = SidecarPanelAdapter.activePanels.get(terminalId);
-        if (existing) {
-            existing.show();
-            return existing;
+    public static getOrCreate(context: vscode.ExtensionContext): SidecarPanelAdapter {
+        if (SidecarPanelAdapter.instance) {
+            return SidecarPanelAdapter.instance;
         }
 
         const panel = vscode.window.createWebviewPanel(
             'sidecar',
-            `Sidecar (${terminalId})`,
+            'Sidecar',
             vscode.ViewColumn.Two,
             {
                 enableScripts: true,
@@ -115,35 +77,47 @@ export class SidecarPanelAdapter {
             }
         );
 
-        const adapter = new SidecarPanelAdapter(panel, context, terminalId, workspaceRoot);
-        SidecarPanelAdapter.activePanels.set(terminalId, adapter);
+        SidecarPanelAdapter.instance = new SidecarPanelAdapter(panel, context);
+        return SidecarPanelAdapter.instance;
+    }
+
+    /**
+     * Legacy method for backward compatibility.
+     * @deprecated Use getOrCreate() instead
+     */
+    public static createNew(
+        context: vscode.ExtensionContext,
+        terminalId: string,
+        workspaceRoot?: string
+    ): SidecarPanelAdapter {
+        const adapter = SidecarPanelAdapter.getOrCreate(context);
+        adapter.currentTerminalId = terminalId;
+        adapter.workspaceRoot = workspaceRoot;
         return adapter;
     }
 
     /**
-     * 기존 create() - deprecated, 호환성 유지용
-     * 새 코드는 createNew() 사용
+     * Legacy method for backward compatibility.
+     * @deprecated Use getOrCreate() instead
      */
     public static create(context: vscode.ExtensionContext): SidecarPanelAdapter {
-        const defaultTerminalId = 'default';
-        return SidecarPanelAdapter.createNew(context, defaultTerminalId);
+        return SidecarPanelAdapter.getOrCreate(context);
     }
 
-    /** 특정 터미널의 패널 조회 */
-    public static getPanel(terminalId: string): SidecarPanelAdapter | undefined {
-        return SidecarPanelAdapter.activePanels.get(terminalId);
+    /**
+     * Get panel if current session matches.
+     * For backward compatibility - always returns the singleton.
+     */
+    public static getPanel(_terminalId: string): SidecarPanelAdapter | undefined {
+        return SidecarPanelAdapter.instance;
     }
 
     private constructor(
         panel: vscode.WebviewPanel,
-        context: vscode.ExtensionContext,
-        terminalId: string = 'default',
-        workspaceRoot?: string
+        context: vscode.ExtensionContext
     ) {
         this.panel = panel;
         this.context = context;
-        this.terminalId = terminalId;
-        this.workspaceRoot = workspaceRoot;
 
         this.initializeWebview();
 
@@ -793,8 +767,49 @@ export class SidecarPanelAdapter {
 
     // ===== Private methods =====
 
-    public getTerminalId(): string {
-        return this.terminalId;
+    public getTerminalId(): string | undefined {
+        return this.currentTerminalId;
+    }
+
+    /**
+     * Switch panel to display a different session's state.
+     * Disconnects from previous StateManager and connects to new one.
+     */
+    public switchToSession(
+        terminalId: string,
+        workspaceRoot: string | undefined,
+        generateDiffUseCase: IGenerateDiffUseCase,
+        addCommentUseCase: IAddCommentUseCase,
+        onSubmitComments: () => Promise<void>,
+        panelStateManager: IPanelStateManager,
+        symbolPort?: ISymbolPort,
+        editCommentUseCase?: IEditCommentUseCase,
+        deleteCommentUseCase?: IDeleteCommentUseCase,
+        fetchHNStoriesUseCase?: IFetchHNStoriesUseCase,
+        generateScopedDiffUseCase?: IGenerateScopedDiffUseCase
+    ): void {
+        console.log(`[Sidecar] Switching panel to session: ${terminalId}`);
+
+        this.currentTerminalId = terminalId;
+        this.workspaceRoot = workspaceRoot;
+
+        // Update use cases and handlers
+        this.generateDiffUseCase = generateDiffUseCase;
+        this.addCommentUseCase = addCommentUseCase;
+        this.onSubmitComments = onSubmitComments;
+        this.panelStateManager = panelStateManager;
+        this.symbolPort = symbolPort;
+        this.editCommentUseCase = editCommentUseCase;
+        this.deleteCommentUseCase = deleteCommentUseCase;
+        this.fetchHNStoriesUseCase = fetchHNStoriesUseCase;
+        this.generateScopedDiffUseCase = generateScopedDiffUseCase;
+
+        // Update panel title
+        this.panel.title = `Sidecar`;
+
+        // Re-render with new session's state
+        const state = panelStateManager.getState();
+        this.render(state);
     }
 
     /** Check if panel is still valid/active */
@@ -808,10 +823,10 @@ export class SidecarPanelAdapter {
     }
 
     public dispose(): void {
-        console.log(`[Sidecar] Panel dispose START: ${this.terminalId}`);
+        console.log(`[Sidecar] Panel dispose START`);
 
-        // Remove from map first to prevent double cleanup
-        SidecarPanelAdapter.activePanels.delete(this.terminalId);
+        // Clear singleton reference
+        SidecarPanelAdapter.instance = undefined;
 
         // Notify webview to cleanup before destroying
         try {
@@ -822,11 +837,11 @@ export class SidecarPanelAdapter {
 
         // Fire callback
         try {
-            console.log(`[Sidecar] Calling onDisposeCallback for ${this.terminalId}`);
+            console.log(`[Sidecar] Calling onDisposeCallback`);
             this.onDisposeCallback?.();
-            console.log(`[Sidecar] onDisposeCallback completed for ${this.terminalId}`);
+            console.log(`[Sidecar] onDisposeCallback completed`);
         } catch (e) {
-            console.error(`[Sidecar] onDisposeCallback error for ${this.terminalId}:`, e);
+            console.error(`[Sidecar] onDisposeCallback error:`, e);
         }
 
         // Dispose all disposables safely

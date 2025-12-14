@@ -10,6 +10,12 @@ import { DiffResult } from '../../../domain/entities/Diff';
 import { GitExtension, GitAPI, Repository, Change, Status } from '../../../types/git';
 import { IThreadStateRepository } from '../../../application/ports/outbound/IThreadStateRepository';
 
+/** Native fs.watch wrapper for directories outside VSCode workspace */
+interface NativeFsWatcher {
+    watcher: fs.FSWatcher;
+    debounceTimer: NodeJS.Timeout | undefined;
+}
+
 /** Pending debounced event data */
 interface DebouncedEventData {
     uri: vscode.Uri;
@@ -81,6 +87,8 @@ interface SessionWorktreeWatcher {
     fileWatcher: vscode.FileSystemWatcher | undefined;
     /** Debounce timer for file watcher events */
     fileWatcherDebounceTimer: NodeJS.Timeout | undefined;
+    /** Native fs.watch for directories outside VSCode workspace */
+    nativeFsWatcher: NativeFsWatcher | undefined;
 }
 
 export class FileWatchController {
@@ -634,6 +642,11 @@ export class FileWatchController {
         // Dispose whitelist watchers
         this.disposeWhitelistWatchers();
 
+        // Dispose all session worktree watchers (including native fs.watch)
+        for (const [terminalId] of this.sessionWorktreeWatchers) {
+            this.unregisterSessionWorkspace(terminalId);
+        }
+
         // Clear git state tracking
         this.lastProcessedChanges.clear();
 
@@ -710,6 +723,10 @@ export class FileWatchController {
     /**
      * Process a file change event (after debouncing).
      * Files reaching this point are already filtered by git extension or whitelist watchers.
+     *
+     * Single Panel Architecture:
+     * - Only update the currently focused thread's session
+     * - Other sessions are updated via their own worktree watchers if applicable
      */
     private async processFileChange(data: DebouncedEventData): Promise<void> {
         const startTime = Date.now();
@@ -741,7 +758,11 @@ export class FileWatchController {
             return;
         }
 
-        this.log(`  Processing: ${relativePath} (sessions=${this.sessions.size})`);
+        // Single Panel Architecture: Only update the focused thread
+        // If no thread is focused, update sessions that match the main workspace
+        const focusedThreadId = this.currentThreadId;
+
+        this.log(`  Processing: ${relativePath} (focusedThread=${focusedThreadId ?? 'none'})`);
 
         try {
             // Git status query (once)
@@ -755,8 +776,14 @@ export class FileWatchController {
                 this.log(`  ⚠️ Slow git status: ${gitTime}ms`);
             }
 
-            // Notify all active sessions
+            // Update only sessions that use the main workspace (not worktree)
+            // Worktree sessions are handled by their own FileSystemWatcher
             for (const [terminalId, sessionContext] of this.sessions) {
+                // Skip sessions with different workspaceRoot (they have their own watchers)
+                if (sessionContext.workspaceRoot && sessionContext.workspaceRoot !== this.workspaceRoot) {
+                    continue;
+                }
+
                 const notifyStart = Date.now();
                 await this.notifyFileChange(sessionContext, relativePath, fileName, status);
                 const notifyTime = Date.now() - notifyStart;
@@ -1083,10 +1110,11 @@ export class FileWatchController {
             lastHeadCommit: undefined,
             fileWatcher: undefined,
             fileWatcherDebounceTimer: undefined,
+            nativeFsWatcher: undefined,
         };
 
         // Find git repository for this worktree
-        let useFileWatcher = true;
+        let useNativeWatcher = true;
         if (this.gitAPI) {
             watcher.repository = this.gitAPI.repositories.find(
                 repo => repo.rootUri.fsPath === sessionWorkspaceRoot
@@ -1098,36 +1126,51 @@ export class FileWatchController {
                 watcher.stateSubscription = watcher.repository.state.onDidChange(() => {
                     this.handleWorktreeGitStateChange(terminalId);
                 });
-                useFileWatcher = false;
+                useNativeWatcher = false;
             } else {
-                this.log(`[Worktree] No repository found for ${sessionWorkspaceRoot}, using FileSystemWatcher fallback`);
+                this.log(`[Worktree] No repository found for ${sessionWorkspaceRoot}, using native fs.watch`);
             }
         }
 
-        // Use FileSystemWatcher if git extension doesn't recognize the repository
-        if (useFileWatcher) {
-            this.log(`[Worktree] Setting up FileSystemWatcher for ${sessionWorkspaceRoot}`);
-            // Watch all files in the worktree directory
-            const filePattern = new vscode.RelativePattern(sessionWorkspaceRoot, '**/*');
-            watcher.fileWatcher = vscode.workspace.createFileSystemWatcher(filePattern);
+        // Use native fs.watch for directories outside VSCode workspace
+        // VSCode's FileSystemWatcher only works within the workspace
+        if (useNativeWatcher) {
+            this.log(`[Worktree] Setting up native fs.watch for ${sessionWorkspaceRoot}`);
+            try {
+                const nativeWatcher = fs.watch(
+                    sessionWorkspaceRoot,
+                    { recursive: true },
+                    (eventType, filename) => {
+                        if (!filename) return;
 
-            const handleFileChange = (uri: vscode.Uri) => {
-                // Skip .git directory
-                if (uri.fsPath.includes('/.git/') || uri.fsPath.includes('\\.git\\')) {
-                    return;
-                }
-                // Debounce file changes (300ms)
-                if (watcher.fileWatcherDebounceTimer) {
-                    clearTimeout(watcher.fileWatcherDebounceTimer);
-                }
-                watcher.fileWatcherDebounceTimer = setTimeout(() => {
-                    this.handleWorktreeFileChange(terminalId, uri);
-                }, 300);
-            };
+                        // Skip .git directory
+                        if (filename.includes('.git')) {
+                            return;
+                        }
 
-            watcher.fileWatcher.onDidChange(handleFileChange);
-            watcher.fileWatcher.onDidCreate(handleFileChange);
-            watcher.fileWatcher.onDidDelete(handleFileChange);
+                        // Debounce file changes (300ms)
+                        if (watcher.nativeFsWatcher?.debounceTimer) {
+                            clearTimeout(watcher.nativeFsWatcher.debounceTimer);
+                        }
+                        if (watcher.nativeFsWatcher) {
+                            watcher.nativeFsWatcher.debounceTimer = setTimeout(() => {
+                                const fullPath = path.join(sessionWorkspaceRoot, filename);
+                                const uri = vscode.Uri.file(fullPath);
+                                this.handleWorktreeFileChange(terminalId, uri);
+                            }, 300);
+                        }
+                    }
+                );
+
+                watcher.nativeFsWatcher = {
+                    watcher: nativeWatcher,
+                    debounceTimer: undefined,
+                };
+
+                this.log(`[Worktree] Native fs.watch created for ${sessionWorkspaceRoot}`);
+            } catch (error) {
+                this.logError('registerSessionWorkspace:fs.watch', error);
+            }
         }
 
         // Setup git HEAD watcher for this worktree
@@ -1173,6 +1216,18 @@ export class FileWatchController {
         watcher.fileWatcher?.dispose();
         if (watcher.fileWatcherDebounceTimer) {
             clearTimeout(watcher.fileWatcherDebounceTimer);
+        }
+
+        // Close native fs.watch
+        if (watcher.nativeFsWatcher) {
+            if (watcher.nativeFsWatcher.debounceTimer) {
+                clearTimeout(watcher.nativeFsWatcher.debounceTimer);
+            }
+            try {
+                watcher.nativeFsWatcher.watcher.close();
+            } catch (error) {
+                // Ignore close errors
+            }
         }
 
         this.sessionWorktreeWatchers.delete(terminalId);

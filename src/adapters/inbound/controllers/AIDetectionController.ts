@@ -8,6 +8,7 @@ import { IGitPort } from '../../../application/ports/outbound/IGitPort';
 import { IFileGlobber } from '../../../application/ports/outbound/IFileGlobber';
 import { ICommentRepository } from '../../../application/ports/outbound/ICommentRepository';
 import { ISymbolPort } from '../../../application/ports/outbound/ISymbolPort';
+import { IThreadStateRepository } from '../../../application/ports/outbound/IThreadStateRepository';
 import { FileInfo } from '../../../application/ports/outbound/PanelState';
 import { IPanelStateManager } from '../../../application/services/IPanelStateManager';
 import { PanelStateManager } from '../../../application/services/PanelStateManager';
@@ -42,6 +43,9 @@ export class AIDetectionController {
 
     /** FileWatchController reference for worktree support */
     private fileWatchController: IFileWatchController | undefined;
+
+    /** ThreadStateRepository for worktree path lookup */
+    private threadStateRepository: IThreadStateRepository | undefined;
 
     /** Callback for session changes (used by ThreadListController) */
     private onSessionChangeCallback?: () => void;
@@ -82,6 +86,13 @@ export class AIDetectionController {
      */
     setFileWatchController(controller: IFileWatchController): void {
         this.fileWatchController = controller;
+    }
+
+    /**
+     * Set ThreadStateRepository reference for worktree path lookup.
+     */
+    setThreadStateRepository(repository: IThreadStateRepository): void {
+        this.threadStateRepository = repository;
     }
 
     /**
@@ -266,13 +277,17 @@ export class AIDetectionController {
         const terminalId = this.registerTerminalId(terminal);
         this.log(`🟢 activateSidecar: registered terminalId=${terminalId}`);
 
+        // ThreadState 조회 (worktree 경로 확인용)
+        const threadState = await this.threadStateRepository?.findByTerminalId(terminalId);
+        this.log(`🟢 activateSidecar: threadState=${threadState ? `found (worktreePath=${threadState.worktreePath})` : 'none'}`);
+
         // 터미널의 현재 작업 디렉토리 감지 (worktree 지원)
-        // shellIntegration.cwd는 VS Code 1.93+ 에서 사용 가능
+        // Priority: threadState.worktreePath > terminal.shellIntegration.cwd > workspace folder
         const terminalCwd = terminal.shellIntegration?.cwd?.fsPath;
         const fallbackRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        const workspaceRoot = terminalCwd || fallbackRoot;
+        const workspaceRoot = threadState?.worktreePath || terminalCwd || fallbackRoot;
 
-        this.log(`🟢 activateSidecar: terminalCwd=${terminalCwd}, fallbackRoot=${fallbackRoot}, using=${workspaceRoot}`);
+        this.log(`🟢 activateSidecar: worktreePath=${threadState?.worktreePath}, terminalCwd=${terminalCwd}, fallbackRoot=${fallbackRoot}, using=${workspaceRoot}`);
 
         // 이미 이 터미널에 세션이 있으면 무시
         if (this.sessions.has(terminalId)) {
@@ -336,25 +351,28 @@ export class AIDetectionController {
 
         await this.moveTerminalToSide(terminalId);
 
-        // ===== 패널 생성 =====
-        const panel = SidecarPanelAdapter.createNew(this.getExtensionContext(), terminalId, workspaceRoot);
+        // ===== 싱글 패널 생성 또는 재사용 =====
+        const panel = SidecarPanelAdapter.getOrCreate(this.getExtensionContext());
+        const isFirstSession = this.sessions.size === 0;
 
-        // State manager → Panel 연결
-        stateManager.setRenderCallback((state) => panel.render(state));
+        // 세션 전환을 위한 콜백 (아직 context 생성 전이므로 클로저 사용)
+        const submitCallback = async () => {
+            const ctx = this.sessions.get(terminalId);
+            if (ctx) {
+                const result = await this.submitCommentsUseCase.execute(ctx.session);
+                if (result) {
+                    stateManager.markCommentsAsSubmitted(result.submittedIds);
+                }
+            }
+        };
 
-        // Panel에 UseCase 연결
-        panel.setUseCases(
+        // 세션 전환 (UseCase, StateManager 연결)
+        panel.switchToSession(
+            terminalId,
+            workspaceRoot,
             generateDiffUseCase,
             addCommentUseCase,
-            async () => {
-                const context = this.sessions.get(terminalId);
-                if (context) {
-                    const result = await this.submitCommentsUseCase.execute(context.session);
-                    if (result) {
-                        stateManager.markCommentsAsSubmitted(result.submittedIds);
-                    }
-                }
-            },
+            submitCallback,
             stateManager,
             this.symbolPort,
             editCommentUseCase,
@@ -363,8 +381,26 @@ export class AIDetectionController {
             generateScopedDiffUseCase
         );
 
+        // State manager → Panel 연결 (현재 포커스된 세션만)
+        stateManager.setRenderCallback((state) => {
+            // Only render if this session is currently focused
+            if (panel.getTerminalId() === terminalId) {
+                panel.render(state);
+            }
+        });
+
         // ===== SessionContext 생성 및 저장 =====
         const session = AISession.create(type, terminalId);
+        const submitCommentsCallback = async () => {
+            const ctx = this.sessions.get(terminalId);
+            if (ctx) {
+                const result = await this.submitCommentsUseCase.execute(ctx.session);
+                if (result) {
+                    stateManager.markCommentsAsSubmitted(result.submittedIds);
+                }
+            }
+        };
+
         const context: SessionContext = {
             terminalId,
             session,
@@ -374,7 +410,14 @@ export class AIDetectionController {
             generateDiffUseCase,
             addCommentUseCase,
             captureSnapshotsUseCase,
-            disposePanel: () => panel.dispose(),
+            // Panel은 세션이 닫힐 때 dispose하지 않음 (싱글 패널이므로)
+            disposePanel: () => {
+                // 세션 정리만 수행, 패널은 유지
+                this.log(`📤 Session closed: ${terminalId}`);
+            },
+            submitComments: submitCommentsCallback,
+            // ThreadState for worktree support
+            threadState: threadState ?? undefined,
         };
 
         this.sessions.set(terminalId, context);
@@ -388,11 +431,16 @@ export class AIDetectionController {
             await this.fileWatchController.registerSessionWorkspace(terminalId, workspaceRoot);
         }
 
-        // Panel dispose 시 세션 정리
-        panel.onDispose(() => {
-            this.log(`📤 Panel onDispose callback triggered for ${terminalId}`);
-            this.flushSession(terminalId);
-        });
+        // 첫 세션일 때만 패널 dispose 콜백 설정
+        if (isFirstSession) {
+            panel.onDispose(() => {
+                this.log(`📤 Panel disposed - clearing all sessions`);
+                // 패널이 닫히면 모든 세션 정리
+                for (const [id] of this.sessions) {
+                    this.flushSession(id);
+                }
+            });
+        }
 
         // 터미널 등록
         this.terminalGateway.registerTerminal(terminalId, terminal);
@@ -467,14 +515,26 @@ export class AIDetectionController {
 
     /**
      * 터미널 ID 등록 (새 세션 시작 시 호출)
+     * Priority: VscodeTerminalGateway에 등록된 ID > 기존 매핑 > 새 ID 생성
      */
     private registerTerminalId(terminal: vscode.Terminal): string {
+        // Check if already cached
         let id = this.terminalIdMap.get(terminal);
-        if (!id) {
-            const name = terminal.name || 'unnamed';
-            id = `terminal-${name}-${++this.terminalCounter}`;
-            this.terminalIdMap.set(terminal, id);
+        if (id) {
+            return id;
         }
+
+        // Check if VscodeTerminalGateway has this terminal (created via CreateThreadUseCase)
+        const gatewayId = this.terminalGateway.getTerminalId(terminal);
+        if (gatewayId) {
+            this.terminalIdMap.set(terminal, gatewayId);
+            return gatewayId;
+        }
+
+        // Fallback: generate new ID for terminals created outside CreateThreadUseCase
+        const name = terminal.name || 'unnamed';
+        id = `terminal-${name}-${++this.terminalCounter}`;
+        this.terminalIdMap.set(terminal, id);
         return id;
     }
 
@@ -521,7 +581,7 @@ export class AIDetectionController {
         // AI 명령 종료 시에만 세션 플러시
         if (this.isAICommand(commandLine)) {
             console.log(`[Sidecar] AI command ended: ${context.session.type} (${terminalId})`);
-            context.disposePanel();  // Panel dispose → flushSession 트리거
+            this.flushSession(terminalId);
         }
     }
 
@@ -531,15 +591,9 @@ export class AIDetectionController {
 
         if (context) {
             console.log(`[Sidecar] Terminal closed: ${context.session.type} (${terminalId})`);
-            context.disposePanel();
-        } else {
-            // 세션이 없어도 패널이 있을 수 있음 (race condition: 세션 생성 중 터미널 닫힘)
-            const panel = SidecarPanelAdapter.getPanel(terminalId);
-            if (panel) {
-                console.log(`[Sidecar] Terminal closed (no session): disposing orphan panel (${terminalId})`);
-                panel.dispose();
-            }
+            this.flushSession(terminalId);
         }
+        // 세션이 없으면 무시 (싱글 패널은 세션과 독립적으로 유지)
     }
 
     private handleTerminalFocus(terminal: vscode.Terminal): void {
@@ -547,9 +601,23 @@ export class AIDetectionController {
         const context = this.sessions.get(terminalId);
 
         if (context) {
-            // Show the panel associated with this terminal
-            const panel = SidecarPanelAdapter.getPanel(terminalId);
+            // Switch panel to this session's context
+            const panel = SidecarPanelAdapter.currentPanel;
             if (panel) {
+                panel.switchToSession(
+                    terminalId,
+                    context.workspaceRoot,
+                    context.generateDiffUseCase,
+                    context.addCommentUseCase,
+                    async () => {
+                        const result = await this.submitCommentsUseCase.execute(context.session);
+                        if (result) {
+                            context.stateManager.markCommentsAsSubmitted(result.submittedIds);
+                        }
+                    },
+                    context.stateManager,
+                    this.symbolPort
+                );
                 panel.show();
             }
         }
