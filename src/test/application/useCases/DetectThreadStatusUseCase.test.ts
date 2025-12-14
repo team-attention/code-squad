@@ -32,23 +32,20 @@ suite('DetectThreadStatusUseCase', () => {
             done();
         });
 
-        test('transitions to idle after debounce when prompt detected', (done) => {
+        test('transitions to idle immediately when prompt detected', (done) => {
             const statuses: AgentStatus[] = [];
             useCase.onStatusChange((_terminalId, status) => {
                 statuses.push(status);
             });
 
-            // Send output with prompt at end
+            // Send output with prompt - should detect idle immediately from buffer
             useCase.processOutput('terminal-1', 'claude', '> ');
 
-            // Wait for debounce (500ms + buffer)
-            setTimeout(() => {
-                assert.strictEqual(statuses.length, 2);
-                assert.strictEqual(statuses[0], 'working');  // Immediate
-                assert.strictEqual(statuses[1], 'idle');     // After debounce
-                assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
-                done();
-            }, 600);
+            // Idle pattern detected immediately, no debounce needed
+            assert.strictEqual(statuses.length, 1);
+            assert.strictEqual(statuses[0], 'idle');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
+            done();
         });
 
         test('stays working if output continues', (done) => {
@@ -75,7 +72,7 @@ suite('DetectThreadStatusUseCase', () => {
             }, 350);
         });
 
-        test('detects waiting status from y/n prompt', (done) => {
+        test('detects waiting status from y/n prompt immediately', (done) => {
             const statuses: AgentStatus[] = [];
             useCase.onStatusChange((_terminalId, status) => {
                 statuses.push(status);
@@ -83,12 +80,11 @@ suite('DetectThreadStatusUseCase', () => {
 
             useCase.processOutput('terminal-1', 'claude', 'Do you want to proceed? (y/n)');
 
-            setTimeout(() => {
-                assert.strictEqual(statuses.length, 2);
-                assert.strictEqual(statuses[0], 'working');
-                assert.strictEqual(statuses[1], 'waiting');
-                done();
-            }, 600);
+            // waiting should be detected immediately from buffer
+            assert.strictEqual(statuses.length, 1);
+            assert.strictEqual(statuses[0], 'waiting');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'waiting');
+            done();
         });
     });
 
@@ -130,7 +126,8 @@ suite('DetectThreadStatusUseCase', () => {
             let changeCount = 0;
             useCase.onStatusChange(() => changeCount++);
 
-            useCase.processOutput('terminal-1', 'claude', '> ');
+            // Send non-pattern output to trigger working state with timer
+            useCase.processOutput('terminal-1', 'claude', 'Some random output');
 
             // Clear before debounce fires
             useCase.clear('terminal-1');
@@ -139,14 +136,14 @@ suite('DetectThreadStatusUseCase', () => {
                 // Only the initial 'working' notification, no 'idle' after clear
                 assert.strictEqual(changeCount, 1);
                 done();
-            }, 600);
+            }, 2500);
         });
     });
 
     suite('buffer management', () => {
-        test('keeps only last 10 lines in buffer', (done) => {
-            // Send 15 lines of output
-            for (let i = 0; i < 15; i++) {
+        test('keeps only last 20 lines in buffer', (done) => {
+            // Send 25 lines of output
+            for (let i = 0; i < 25; i++) {
                 useCase.processOutput('terminal-1', 'claude', `Line ${i}`);
             }
 
@@ -157,6 +154,70 @@ suite('DetectThreadStatusUseCase', () => {
                 assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
                 done();
             }, 600);
+        });
+
+        test('detects waiting from buffer when prompt arrives in separate chunk', (done) => {
+            const statuses: AgentStatus[] = [];
+            useCase.onStatusChange((_terminalId, status) => {
+                statuses.push(status);
+            });
+
+            // Simulate Claude permission dialog arriving in chunks
+            // First chunk: the question and options
+            useCase.processOutput('terminal-1', 'claude', 'Do you want to make this edit to README.md?');
+            useCase.processOutput('terminal-1', 'claude', '1. Yes');
+            useCase.processOutput('terminal-1', 'claude', '2. Yes, allow all edits during this session');
+            // Last chunk: just the cancel hint (no waiting pattern by itself)
+            useCase.processOutput('terminal-1', 'claude', 'Esc to cancel');
+
+            // Should detect waiting from buffer (Do you want to)
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'waiting');
+            done();
+        });
+
+        test('transitions from waiting to idle when prompt appears in current output', (done) => {
+            const statuses: AgentStatus[] = [];
+            useCase.onStatusChange((_terminalId, status) => {
+                statuses.push(status);
+            });
+
+            // First: permission dialog
+            useCase.processOutput('terminal-1', 'claude', 'Do you want to proceed? (y/n)');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'waiting');
+
+            // User answers, new prompt appears in CURRENT output
+            useCase.processOutput('terminal-1', 'claude', '> ');
+
+            // Should now be idle (prompt detected from current output)
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
+            done();
+        });
+
+        test('Gemini idle prompt detected from current output', (done) => {
+            const statuses: AgentStatus[] = [];
+            useCase.onStatusChange((_terminalId, status) => {
+                statuses.push(status);
+            });
+
+            // Simulate Gemini output sequence
+            useCase.processOutput('terminal-1', 'gemini', '+ Okay, I see the top-level directories.');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'working');
+
+            // Idle prompt in current output
+            useCase.processOutput('terminal-1', 'gemini', '> Type your message or @path/to/file');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
+            done();
+        });
+
+        test('transitions to working when output has no pattern', (done) => {
+            // Start with idle
+            useCase.processOutput('terminal-1', 'claude', '> ');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'idle');
+
+            // AI starts working - output without idle pattern
+            useCase.processOutput('terminal-1', 'claude', 'Reading file...');
+            assert.strictEqual(useCase.getStatus('terminal-1'), 'working');
+            done();
         });
     });
 });
