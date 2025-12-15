@@ -32,6 +32,8 @@ const CLAUDE_PATTERNS: StatusPattern[] = [
             /Press Enter to continue/,
             /Do you want to proceed\?/i,
             /Do you want to/i,
+            /Enter plan mode\?/i,           // Plan mode prompt
+            /Yes,\s*enter plan mode/i,      // Plan mode menu option
         ],
     },
     {
