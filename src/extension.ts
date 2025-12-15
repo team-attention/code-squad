@@ -280,6 +280,13 @@ export function activate(context: vscode.ExtensionContext) {
 
     // ===== Commands =====
 
+    // Open Sidebar
+    context.subscriptions.push(
+        vscode.commands.registerCommand('codeSquad.openSidebar', () => {
+            vscode.commands.executeCommand('workbench.view.extension.codeSquad');
+        })
+    );
+
     // Reset Auto-Open Setting
     context.subscriptions.push(
         vscode.commands.registerCommand('codeSquad.resetAutoOpen', async () => {

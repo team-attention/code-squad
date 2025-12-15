@@ -52,6 +52,10 @@
     },
     "commands": [
       {
+        "command": "codeSquad.openSidebar",
+        "title": "Code Squad: Open Sidebar"
+      },
+      {
         "command": "codeSquad.resetAutoOpen",
         "title": "Code Squad: Reset Auto-Open Setting"
       },
