@@ -132,12 +132,13 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
 
     private getHtmlContent(): string {
         const nonce = this.getNonce();
+        const cspSource = this.view!.webview.cspSource;
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'nonce-${nonce}'; script-src 'nonce-${nonce}'; font-src ${cspSource};">
     <style nonce="${nonce}">
         *{margin:0;padding:0;box-sizing:border-box}
         html,body{font-family:var(--vscode-font-family);font-size:13px;color:var(--vscode-foreground);background:var(--vscode-sideBar-background);overflow-x:hidden;width:100%;padding:0!important;margin:0!important}
