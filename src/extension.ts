@@ -83,7 +83,7 @@ export function activate(context: vscode.ExtensionContext) {
     );
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const manageWhitelistUseCase = new ManageWhitelistUseCase(threadStateRepository);
-    const detectThreadStatusUseCase = new DetectThreadStatusUseCase(terminalStatusDetector);
+    const detectThreadStatusUseCase = new DetectThreadStatusUseCase(terminalStatusDetector, notificationGateway);
 
     // ===== Adapters Layer - Controllers =====
     const aiDetectionController = new AIDetectionController(
@@ -147,13 +147,20 @@ export function activate(context: vscode.ExtensionContext) {
         const session = sessions.get(terminalId);
         if (session) {
             const currentMetadata = session.session.agentMetadata;
+            const threadName = currentMetadata?.name ?? session.session.displayName;
             session.session.setAgentMetadata({
-                name: currentMetadata?.name ?? session.session.displayName,
+                name: threadName,
                 status,
                 fileCount: currentMetadata?.fileCount ?? 0,
             });
+            detectThreadStatusUseCase.setThreadName(terminalId, threadName);
             threadListController.refresh();
         }
+    });
+
+    // Focus terminal when notification is clicked
+    detectThreadStatusUseCase.onNotificationClick((terminalId) => {
+        terminalGateway.showTerminal(terminalId);
     });
 
     // Subscribe to AI type changes from output pattern detection (backup for command detection)

@@ -14,5 +14,7 @@ export interface IDetectThreadStatusUseCase {
     getAIType(terminalId: string): AIType | null;
     onStatusChange(callback: StatusChangeCallback): void;
     onAITypeChange(callback: AITypeChangeCallback): void;
+    onNotificationClick(callback: (terminalId: string) => void): void;
     clear(terminalId: string): void;
+    setThreadName(terminalId: string, name: string): void;
 }

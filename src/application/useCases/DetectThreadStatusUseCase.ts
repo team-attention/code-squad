@@ -1,14 +1,17 @@
 import { ITerminalStatusDetector } from '../../domain/services/TerminalStatusDetector';
 import { AgentStatus, AIType } from '../../domain/entities/AISession';
 import { IDetectThreadStatusUseCase, StatusChangeCallback, AITypeChangeCallback } from '../ports/inbound/IDetectThreadStatusUseCase';
+import { INotificationPort } from '../ports/outbound/INotificationPort';
 
 interface TerminalState {
     status: AgentStatus;
     lastUpdate: number;
     idleTimer?: ReturnType<typeof setTimeout>;
+    waitingNotificationTimer?: ReturnType<typeof setTimeout>;
     rawBuffer: string;
     toolInProgress: boolean;
     detectedAIType: AIType | null;
+    threadName?: string;
 }
 
 // Strip ANSI escape codes from text
@@ -33,8 +36,19 @@ export class DetectThreadStatusUseCase implements IDetectThreadStatusUseCase {
     // Buffer only needed for patterns split across chunk boundaries
     // Longest pattern is ~30 chars, so 100 chars is plenty
     private static MAX_BUFFER_SIZE = 100;
+    // Time to wait before showing notification when agent is waiting
+    private static WAITING_NOTIFICATION_MS = 2000;
 
-    constructor(private detector: ITerminalStatusDetector) {}
+    private focusTerminalCallback?: (terminalId: string) => void;
+
+    constructor(
+        private detector: ITerminalStatusDetector,
+        private notificationPort?: INotificationPort
+    ) {}
+
+    onNotificationClick(callback: (terminalId: string) => void): void {
+        this.focusTerminalCallback = callback;
+    }
 
     /**
      * Schedule idle/waiting transition after IDLE_TIMEOUT_MS of no output.
@@ -221,7 +235,15 @@ export class DetectThreadStatusUseCase implements IDetectThreadStatusUseCase {
         if (state?.idleTimer) {
             clearTimeout(state.idleTimer);
         }
+        if (state?.waitingNotificationTimer) {
+            clearTimeout(state.waitingNotificationTimer);
+        }
         this.states.delete(terminalId);
+    }
+
+    setThreadName(terminalId: string, name: string): void {
+        const state = this.getOrCreateState(terminalId);
+        state.threadName = name;
     }
 
     private getOrCreateState(terminalId: string): TerminalState {
@@ -238,6 +260,32 @@ export class DetectThreadStatusUseCase implements IDetectThreadStatusUseCase {
     }
 
     private notifyChange(terminalId: string, status: AgentStatus): void {
+        const state = this.states.get(terminalId);
+
+        // Manage waiting notification timer
+        if (state) {
+            // Clear existing waiting notification timer if any
+            if (state.waitingNotificationTimer) {
+                clearTimeout(state.waitingNotificationTimer);
+                state.waitingNotificationTimer = undefined;
+            }
+
+            // Schedule notification if entering waiting state
+            if (status === 'waiting' && this.notificationPort) {
+                state.waitingNotificationTimer = setTimeout(() => {
+                    // Only notify if still in waiting state
+                    if (state.status === 'waiting') {
+                        const threadName = state.threadName || 'Agent';
+                        this.notificationPort?.showSystemNotification(
+                            'Code Squad',
+                            `${threadName} is waiting for your input`,
+                            () => this.focusTerminalCallback?.(terminalId)
+                        );
+                    }
+                }, DetectThreadStatusUseCase.WAITING_NOTIFICATION_MS);
+            }
+        }
+
         for (const callback of this.callbacks) {
             callback(terminalId, status);
         }

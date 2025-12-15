@@ -53,6 +53,7 @@ class MockNotificationPort implements INotificationPort {
         this.warningMessages.push(message);
     }
     showError(_message: string): void {}
+    showSystemNotification(_title: string, _message: string, _onClick?: () => void): void {}
 }
 
 class MockFileThreadMappingRepository implements IFileThreadMappingRepository {
