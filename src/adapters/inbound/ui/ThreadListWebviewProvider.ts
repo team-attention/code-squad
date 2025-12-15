@@ -131,12 +131,14 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     private getHtmlContent(): string {
+        const nonce = this.getNonce();
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
+    <style nonce="${nonce}">
         *{margin:0;padding:0;box-sizing:border-box}
         html,body{font-family:var(--vscode-font-family);font-size:13px;color:var(--vscode-foreground);background:var(--vscode-sideBar-background);overflow-x:hidden;width:100%;padding:0!important;margin:0!important}
         .section{border-bottom:1px solid var(--vscode-panel-border)}
@@ -215,7 +217,7 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
             <div id="threadList"><div class="empty-msg">No threads yet</div></div>
         </div>
     </div>
-<script>
+<script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 const $ = id => document.getElementById(id);
 const threadName = $('threadName');
@@ -356,5 +358,14 @@ vscode.postMessage({ type: 'webviewReady' });
 </script>
 </body>
 </html>`;
+    }
+
+    private getNonce(): string {
+        let text = '';
+        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        for (let i = 0; i < 32; i++) {
+            text += possible.charAt(Math.floor(Math.random() * possible.length));
+        }
+        return text;
     }
 }
