@@ -1,5 +1,13 @@
 <div align="center">
 
+> **Deprecated**: This extension has been superseded by **[Code Squad](https://github.com/team-attention/code-squad)**, which includes all Sidecar features plus multi-agent session management.
+
+</div>
+
+---
+
+<div align="center">
+
 <img alt="Sidecar" src="assets/sidecar-full.png" width="400">
 
 <br />
@@ -33,13 +41,13 @@ One seamless flow — talk to AI, review what it built, give feedback, keep buil
 
 ## Features
 
-**👁️ Unified View**
+**Unified View**
 All AI outputs — code, docs, configs — organized in a single panel. No more hunting through files.
 
-**💬 Inline Comments**
+**Inline Comments**
 Select lines, leave feedback, send to AI. Talk to AI in context, not in a separate terminal.
 
-**🧩 Structured Diffs**
+**Structured Diffs**
 Changes grouped by function, class, or module. See the intent, not just the diff.
 
 ---
