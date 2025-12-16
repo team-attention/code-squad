@@ -13,6 +13,8 @@ interface ThreadInfo {
     workingDir: string;
     hasWorktree: boolean;
     threadId: string;
+    isolationMode: 'local' | 'branch' | 'worktree';
+    branchName?: string;
 }
 
 export interface CreateThreadOptions {
@@ -135,6 +137,14 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
             // Working directory priority: worktreePath > workspaceRoot
             const workingDir = threadState?.worktreePath || ctx.workspaceRoot;
 
+            // Determine isolation mode from threadState
+            let isolationMode: 'local' | 'branch' | 'worktree' = 'local';
+            if (threadState?.worktreePath) {
+                isolationMode = 'worktree';
+            } else if (threadState?.branch) {
+                isolationMode = 'branch';
+            }
+
             threads.push({
                 id: terminalId,
                 name,
@@ -143,7 +153,9 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
                 isSelected: this.selectedId === terminalId,
                 workingDir,
                 hasWorktree: !!threadState?.worktreePath,
-                threadId: threadState?.threadId ?? ''
+                threadId: threadState?.threadId ?? '',
+                isolationMode,
+                branchName: threadState?.branch
             });
         }
 
@@ -181,7 +193,8 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         .submit-button:hover{background:var(--vscode-button-hoverBackground)}
         .submit-button.secondary-button{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);margin-top:4px}
         .submit-button.secondary-button:hover{background:var(--vscode-button-secondaryHoverBackground)}
-        .thread-item{display:flex;align-items:center;gap:10px;padding:12px 12px;cursor:pointer;min-height:44px}
+        .thread-item{display:flex;flex-direction:column;padding:8px 12px;cursor:pointer;min-height:44px}
+        .thread-main{display:flex;align-items:center;gap:10px}
         .thread-item:hover{background:var(--vscode-list-hoverBackground)}
         .thread-item.selected{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground)}
         .thread-item.waiting{animation:bg-blink 1s ease-in-out infinite}
@@ -211,6 +224,13 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         /* 드롭 인디케이터 */
         .thread-item.drag-over-top{box-shadow:inset 0 2px 0 var(--vscode-focusBorder)}
         .thread-item.drag-over-bottom{box-shadow:inset 0 -2px 0 var(--vscode-focusBorder)}
+        /* Isolation mode badges */
+        .thread-isolation{font-size:10px;color:var(--vscode-descriptionForeground);padding-left:26px;margin-top:2px;display:flex;align-items:center;gap:4px}
+        .isolation-badge{display:inline-block;padding:1px 4px;border-radius:2px;font-size:9px;text-transform:uppercase;font-weight:500}
+        .isolation-badge.local{background:var(--vscode-badge-background);color:var(--vscode-badge-foreground)}
+        .isolation-badge.branch{background:rgba(55,148,255,0.2);color:var(--vscode-charts-blue,#3794ff)}
+        .isolation-badge.worktree{background:rgba(137,209,133,0.2);color:var(--vscode-charts-green,#89d185)}
+        .thread-branch-name{opacity:0.8}
     </style>
 </head>
 <body>
@@ -425,18 +445,28 @@ function render(threads) {
     // 순서 적용
     const sorted = sortThreads(threads);
 
-    threadList.innerHTML = sorted.map(t =>
-        '<div class="thread-item ' + t.status + (t.isSelected ? ' selected' : '') + '" data-id="' + t.id + '" data-thread-id="' + t.threadId + '" data-has-worktree="' + t.hasWorktree + '" draggable="true">' +
-        '<span class="drag-handle">\u22EE\u22EE</span>' +
-        '<span class="thread-status ' + t.status + '" title="' + getStatusTitle(t.status) + '">' + getStatusIcon(t.status) + '</span>' +
-        '<span class="thread-name">' + esc(t.name) + '</span>' +
-        '<div class="thread-actions">' +
-        '<button class="thread-action-btn terminal" title="Open Terminal"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3 3l4 4-4 4v-1l3-3-3-3V3zm5 7h5v1H8v-1z"/></svg></button>' +
-        (t.hasWorktree ? '<button class="thread-action-btn editor" title="Open in Editor"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1H10v1H2v12h12V6h1v8.5l-.5.5h-13l-.5-.5v-13l.5-.5z"/><path d="M15 1.5V5h-1V2.707L8.354 8.354l-.708-.708L13.293 2H11V1h3.5l.5.5z"/></svg></button>' : '') +
-        '<button class="thread-action-btn delete" title="Cleanup">\uD83D\uDDD1\uFE0F</button>' +
-        '</div>' +
-        '</div>'
-    ).join('');
+    threadList.innerHTML = sorted.map(t => {
+        const isolationLabel = t.isolationMode === 'worktree' ? 'Worktree'
+            : t.isolationMode === 'branch' ? 'Branch'
+            : 'Local';
+
+        return '<div class="thread-item ' + t.status + (t.isSelected ? ' selected' : '') + '" data-id="' + t.id + '" data-thread-id="' + t.threadId + '" data-has-worktree="' + t.hasWorktree + '" draggable="true">' +
+            '<div class="thread-main">' +
+            '<span class="drag-handle">\u22EE\u22EE</span>' +
+            '<span class="thread-status ' + t.status + '" title="' + getStatusTitle(t.status) + '">' + getStatusIcon(t.status) + '</span>' +
+            '<span class="thread-name">' + esc(t.name) + '</span>' +
+            '<div class="thread-actions">' +
+            '<button class="thread-action-btn terminal" title="Open Terminal"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3 3l4 4-4 4v-1l3-3-3-3V3zm5 7h5v1H8v-1z"/></svg></button>' +
+            (t.hasWorktree ? '<button class="thread-action-btn editor" title="Open in Editor"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1H10v1H2v12h12V6h1v8.5l-.5.5h-13l-.5-.5v-13l.5-.5z"/><path d="M15 1.5V5h-1V2.707L8.354 8.354l-.708-.708L13.293 2H11V1h3.5l.5.5z"/></svg></button>' : '') +
+            '<button class="thread-action-btn delete" title="Cleanup">\uD83D\uDDD1\uFE0F</button>' +
+            '</div>' +
+            '</div>' +
+            '<div class="thread-isolation">' +
+            '<span class="isolation-badge ' + t.isolationMode + '">' + isolationLabel + '</span>' +
+            (t.branchName ? '<span class="thread-branch-name">' + esc(t.branchName) + '</span>' : '') +
+            '</div>' +
+            '</div>';
+    }).join('');
 
     threadList.querySelectorAll('.thread-item').forEach((el, index) => {
         const threadId = el.dataset.threadId;
