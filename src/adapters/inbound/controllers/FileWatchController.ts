@@ -930,8 +930,15 @@ export class FileWatchController {
         const uncommittedFiles = await this.gitPort.getUncommittedFilesWithStatus(this.workspaceRoot);
         const uncommittedPaths = new Set(uncommittedFiles.map(f => f.path));
 
-        // Update each session
+        // Update only sessions that belong to this (main) workspace
+        // Worktree sessions are handled separately by handleWorktreeCommit()
         for (const [terminalId, sessionContext] of this.sessions) {
+            // Skip sessions with different workspaceRoot (worktree sessions)
+            if (sessionContext.workspaceRoot !== this.workspaceRoot) {
+                this.log(`  Skip session ${terminalId}: different workspaceRoot (worktree)`);
+                continue;
+            }
+
             const { stateManager } = sessionContext;
             const currentState = stateManager.getState();
 
