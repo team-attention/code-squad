@@ -127,6 +127,18 @@ class MockGitPort implements IGitPort {
         return null;
     }
 
+    async listWorktrees(_workspaceRoot: string): Promise<Array<{ path: string; branch: string; head: string }>> {
+        return [];
+    }
+
+    async isValidWorktree(_path: string, _workspaceRoot: string): Promise<boolean> {
+        return false;
+    }
+
+    async getWorktreeBranch(_worktreePath: string): Promise<string> {
+        return 'main';
+    }
+
     setDiff(relativePath: string, diff: string): void {
         this.diffs.set(relativePath, diff);
     }

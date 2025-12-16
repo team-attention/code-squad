@@ -105,6 +105,18 @@ class MockGitPort implements IGitPort {
     async getWorktreeRoot(_workspaceRoot: string): Promise<string | null> {
         return null;
     }
+
+    async listWorktrees(_workspaceRoot: string): Promise<Array<{ path: string; branch: string; head: string }>> {
+        return [];
+    }
+
+    async isValidWorktree(_path: string, _workspaceRoot: string): Promise<boolean> {
+        return false;
+    }
+
+    async getWorktreeBranch(_worktreePath: string): Promise<string> {
+        return 'main';
+    }
 }
 
 class MockFileSystemPort implements IFileSystemPort {

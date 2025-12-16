@@ -5,9 +5,10 @@ import { ThreadListWebviewProvider, CreateThreadOptions } from '../ui/ThreadList
 import { CodeSquadPanelAdapter } from '../ui/CodeSquadPanelAdapter';
 import { ITerminalPort } from '../../../application/ports/outbound/ITerminalPort';
 import { ICreateThreadUseCase, IsolationMode } from '../../../application/ports/inbound/ICreateThreadUseCase';
+import { IAttachToWorktreeUseCase } from '../../../application/ports/inbound/IAttachToWorktreeUseCase';
 import { FileWatchController } from './FileWatchController';
 import { ICommentRepository } from '../../../application/ports/outbound/ICommentRepository';
-import { IGitPort } from '../../../application/ports/outbound/IGitPort';
+import { IGitPort, WorktreeInfo } from '../../../application/ports/outbound/IGitPort';
 import { FileInfo } from '../../../application/ports/outbound/PanelState';
 
 export class ThreadListController {
@@ -19,6 +20,7 @@ export class ThreadListController {
         private readonly getSessions: () => Map<string, SessionContext>,
         private readonly terminalGateway: ITerminalPort,
         private readonly createThreadUseCase?: ICreateThreadUseCase,
+        private readonly attachToWorktreeUseCase?: IAttachToWorktreeUseCase,
         private readonly attachCodeSquad?: (terminalId: string) => Promise<void>,
         private readonly fileWatchController?: FileWatchController,
         private readonly commentRepository?: ICommentRepository,
@@ -32,7 +34,8 @@ export class ThreadListController {
             this.getSessions,
             (id) => this.selectThread(id),
             (options) => this.createThreadFromInput(options),
-            (id) => this.openNewTerminal(id)
+            (id) => this.openNewTerminal(id),
+            () => this.attachToWorktree()
         );
 
         // Register webview view provider
@@ -328,6 +331,115 @@ export class ThreadListController {
         const name = threadState?.name ?? context.session.displayName;
 
         await this.terminalGateway.createTerminal(`Terminal: ${name}`, workingDir, true);
+    }
+
+    /**
+     * Attach Code Squad to an existing git worktree.
+     * Shows Quick Pick for worktree selection and Input Box for thread naming.
+     */
+    async attachToWorktree(): Promise<void> {
+        if (!this.attachToWorktreeUseCase) {
+            vscode.window.showErrorMessage('Attach to worktree use case not available');
+            return;
+        }
+
+        if (!this.gitPort) {
+            vscode.window.showErrorMessage('Git port not available');
+            return;
+        }
+
+        const workspaceRoot = this.getWorkspaceRoot();
+        if (!workspaceRoot) {
+            vscode.window.showErrorMessage('No workspace folder open');
+            return;
+        }
+
+        // Step 1: Get all worktrees
+        let allWorktrees: WorktreeInfo[];
+        try {
+            allWorktrees = await this.gitPort.listWorktrees(workspaceRoot);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Failed to list worktrees: ${message}`);
+            return;
+        }
+
+        if (allWorktrees.length === 0) {
+            vscode.window.showInformationMessage(
+                'No git worktrees found in this repository. Create one using "Start Thread" with Worktree isolation mode.'
+            );
+            return;
+        }
+
+        // Step 2: Filter out already-attached worktrees
+        const sessions = this.getSessions();
+        const attachedPaths = new Set(
+            Array.from(sessions.values())
+                .map(ctx => ctx.threadState?.worktreePath)
+                .filter(Boolean)
+        );
+
+        const availableWorktrees = allWorktrees.filter(
+            wt => !attachedPaths.has(wt.path)
+        );
+
+        if (availableWorktrees.length === 0) {
+            vscode.window.showInformationMessage(
+                'All worktrees are already attached to threads'
+            );
+            return;
+        }
+
+        // Step 3: Show Quick Pick for worktree selection
+        const selectedWorktree = await vscode.window.showQuickPick(
+            availableWorktrees.map(wt => ({
+                label: wt.path,
+                description: `branch: ${wt.branch}`,
+                worktree: wt,
+            })),
+            {
+                placeHolder: 'Select a worktree to attach',
+            }
+        );
+
+        if (!selectedWorktree) {
+            return;
+        }
+
+        // Step 4: Show Input Box for thread name (pre-filled with branch name)
+        const threadName = await vscode.window.showInputBox({
+            prompt: 'Thread name',
+            value: selectedWorktree.worktree.branch,
+            placeHolder: selectedWorktree.worktree.branch,
+            validateInput: (value) => value.trim() ? null : 'Name is required',
+        });
+
+        if (!threadName) {
+            return;
+        }
+
+        // Step 5: Execute attach use case
+        try {
+            const result = await this.attachToWorktreeUseCase.execute({
+                worktreePath: selectedWorktree.worktree.path,
+                name: threadName.trim(),
+                workspaceRoot,
+            });
+
+            // Step 6: Auto-attach Code Squad to the new terminal
+            if (this.attachCodeSquad) {
+                await this.attachCodeSquad(result.threadState.terminalId);
+            }
+
+            // Step 7: Refresh and select new thread
+            this.refresh();
+            await this.selectThread(result.threadState.terminalId);
+
+            vscode.window.showInformationMessage(`Agent "${threadName.trim()}" attached to worktree`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Failed to attach to worktree: ${message}`);
+        }
     }
 
     dispose(): void {

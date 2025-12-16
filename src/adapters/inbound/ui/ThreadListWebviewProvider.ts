@@ -31,7 +31,8 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         private readonly getSessions: () => Map<string, SessionContext>,
         private readonly onSelectThread: (id: string) => void,
         private readonly onCreateThread: (options: CreateThreadOptions) => void,
-        private readonly onOpenNewTerminal: (id: string) => void
+        private readonly onOpenNewTerminal: (id: string) => void,
+        private readonly onAttachToWorktree: () => void
     ) {}
 
     resolveWebviewView(
@@ -68,6 +69,9 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'openNewTerminal':
                     this.onOpenNewTerminal(message.id);
+                    break;
+                case 'attachToWorktree':
+                    this.onAttachToWorktree();
                     break;
             }
         });
@@ -159,6 +163,8 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         .form-input::placeholder{color:var(--vscode-input-placeholderForeground)}
         .submit-button{width:100%;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;padding:6px 12px;font-size:13px;cursor:pointer;margin-top:8px}
         .submit-button:hover{background:var(--vscode-button-hoverBackground)}
+        .submit-button.secondary-button{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);margin-top:4px}
+        .submit-button.secondary-button:hover{background:var(--vscode-button-secondaryHoverBackground)}
         .thread-item{display:flex;align-items:center;gap:10px;padding:12px 12px;cursor:pointer;min-height:44px}
         .thread-item:hover{background:var(--vscode-list-hoverBackground)}
         .thread-item.selected{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground)}
@@ -208,6 +214,7 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
                 <input type="text" class="form-input" id="worktreePath" placeholder="../project.worktree/branch-name">
             </div>
             <button class="submit-button" id="startBtn">Start Thread</button>
+            <button class="submit-button secondary-button" id="attachBtn">Attach to Worktree</button>
         </div>
     </div>
     <div class="section">
@@ -302,6 +309,11 @@ $('startBtn').addEventListener('click', () => {
 });
 
 threadName.addEventListener('keydown', e => { if (e.key === 'Enter') $('startBtn').click(); });
+
+// Attach to worktree
+$('attachBtn').addEventListener('click', () => {
+    vscode.postMessage({ type: 'attachToWorktree' });
+});
 
 // Status icon and title mappings
 function getStatusIcon(status) {

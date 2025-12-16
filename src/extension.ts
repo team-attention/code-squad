@@ -8,6 +8,7 @@ import { AIType } from './domain/entities/AISession';
 // Application - Use Cases
 import { SubmitCommentsUseCase } from './application/useCases/SubmitCommentsUseCase';
 import { CreateThreadUseCase } from './application/useCases/CreateThreadUseCase';
+import { AttachToWorktreeUseCase } from './application/useCases/AttachToWorktreeUseCase';
 import { ManageWhitelistUseCase } from './application/useCases/ManageWhitelistUseCase';
 import { TrackFileOwnershipUseCase } from './application/useCases/TrackFileOwnershipUseCase';
 import { DetectThreadStatusUseCase } from './application/useCases/DetectThreadStatusUseCase';
@@ -83,6 +84,11 @@ export function activate(context: vscode.ExtensionContext) {
         fileSystemGateway,
         fileGlobber
     );
+    const attachToWorktreeUseCase = new AttachToWorktreeUseCase(
+        threadStateRepository,
+        terminalGateway,
+        gitGateway
+    );
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const manageWhitelistUseCase = new ManageWhitelistUseCase(threadStateRepository);
     const detectThreadStatusUseCase = new DetectThreadStatusUseCase(terminalStatusDetector, notificationGateway);
@@ -117,6 +123,7 @@ export function activate(context: vscode.ExtensionContext) {
         () => aiDetectionController.getSessions(),
         terminalGateway,
         createThreadUseCase,
+        attachToWorktreeUseCase,
         (terminalId) => aiDetectionController.attachToTerminalById(terminalId),
         fileWatchController,
         commentRepository,
