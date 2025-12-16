@@ -82,6 +82,8 @@ interface SessionWorktreeWatcher {
     fileWatcher: vscode.FileSystemWatcher | undefined;
     /** Debounce timer for file watcher events */
     fileWatcherDebounceTimer: NodeJS.Timeout | undefined;
+    /** Whitelist watchers for this worktree session */
+    whitelistWatchers: vscode.FileSystemWatcher[];
 }
 
 export class FileWatchController {
@@ -301,6 +303,11 @@ export class FileWatchController {
         // Rebuild whitelist watchers with new patterns
         if (this.extensionContext) {
             this.setupWhitelistWatchers(this.extensionContext);
+        }
+
+        // Rebuild whitelist watchers for all worktree sessions
+        for (const [terminalId, watcher] of this.sessionWorktreeWatchers) {
+            this.setupWorktreeWhitelistWatchers(watcher, watcher.workspaceRoot, terminalId);
         }
     }
 
@@ -1131,6 +1138,7 @@ export class FileWatchController {
             lastHeadCommit: undefined,
             fileWatcher: undefined,
             fileWatcherDebounceTimer: undefined,
+            whitelistWatchers: [],
         };
 
         // Find git repository for this worktree
@@ -1217,8 +1225,82 @@ export class FileWatchController {
         // Initialize last commit hash
         watcher.lastHeadCommit = await this.getHeadCommitForPath(sessionWorkspaceRoot);
 
+        // Setup whitelist watchers for this worktree
+        this.setupWorktreeWhitelistWatchers(watcher, sessionWorkspaceRoot, terminalId);
+
         this.sessionWorktreeWatchers.set(terminalId, watcher);
         this.log(`[Worktree] Session ${terminalId} registered successfully`);
+    }
+
+    /**
+     * Setup whitelist watchers for a specific worktree session.
+     * These watch for changes to files matching whitelist patterns in the worktree directory.
+     */
+    private setupWorktreeWhitelistWatchers(
+        watcher: SessionWorktreeWatcher,
+        sessionWorkspaceRoot: string,
+        terminalId: string
+    ): void {
+        // Clear existing whitelist watchers for this session
+        for (const w of watcher.whitelistWatchers) {
+            w.dispose();
+        }
+        watcher.whitelistWatchers = [];
+
+        // Get all whitelist patterns (global + current thread patterns)
+        const config = vscode.workspace.getConfiguration('codeSquad');
+        const globalPatterns = config.get<string[]>('includeFiles', []);
+        const allPatterns = [...new Set([...globalPatterns, ...(this.sessions?.get(terminalId)?.threadState?.whitelistPatterns ?? [])])];
+
+        if (allPatterns.length === 0) {
+            this.log(`[Worktree] No whitelist patterns for session ${terminalId}`);
+            return;
+        }
+
+        this.log(`[Worktree] Setting up ${allPatterns.length} whitelist watcher(s) for ${sessionWorkspaceRoot}`);
+
+        for (const pattern of allPatterns) {
+            const relativePattern = new vscode.RelativePattern(
+                vscode.Uri.file(sessionWorkspaceRoot),
+                pattern
+            );
+            const patternWatcher = vscode.workspace.createFileSystemWatcher(relativePattern);
+
+            const handleWhitelistChange = (uri: vscode.Uri) => {
+                this.handleWorktreeWhitelistFileChange(terminalId, uri, sessionWorkspaceRoot);
+            };
+
+            patternWatcher.onDidChange(handleWhitelistChange);
+            patternWatcher.onDidCreate(handleWhitelistChange);
+
+            watcher.whitelistWatchers.push(patternWatcher);
+            this.log(`[Worktree] Whitelist watcher: ${pattern} for ${sessionWorkspaceRoot}`);
+        }
+    }
+
+    /**
+     * Handle whitelist file change in a worktree session.
+     */
+    private handleWorktreeWhitelistFileChange(
+        terminalId: string,
+        uri: vscode.Uri,
+        sessionWorkspaceRoot: string
+    ): void {
+        const relativePath = path.relative(sessionWorkspaceRoot, uri.fsPath);
+        this.log(`[Worktree:Whitelist] Event: ${relativePath}, session: ${terminalId}`);
+
+        // Get the watcher for debouncing
+        const watcher = this.sessionWorktreeWatchers.get(terminalId);
+        if (!watcher) return;
+
+        // Debounce (use same timer as file watcher)
+        if (watcher.fileWatcherDebounceTimer) {
+            clearTimeout(watcher.fileWatcherDebounceTimer);
+        }
+        watcher.fileWatcherDebounceTimer = setTimeout(() => {
+            this.log(`[Worktree:Whitelist] Processing: ${relativePath}`);
+            this.handleWorktreeFileChange(terminalId, uri);
+        }, this.debounceMs || 300);
     }
 
     /**
@@ -1238,6 +1320,11 @@ export class FileWatchController {
         watcher.fileWatcher?.dispose();
         if (watcher.fileWatcherDebounceTimer) {
             clearTimeout(watcher.fileWatcherDebounceTimer);
+        }
+
+        // Dispose whitelist watchers
+        for (const w of watcher.whitelistWatchers) {
+            w.dispose();
         }
 
         this.sessionWorktreeWatchers.delete(terminalId);
