@@ -1250,7 +1250,7 @@ export class FileWatchController {
         // Get all whitelist patterns (global + current thread patterns)
         const config = vscode.workspace.getConfiguration('codeSquad');
         const globalPatterns = config.get<string[]>('includeFiles', []);
-        const allPatterns = [...new Set([...globalPatterns, ...this.currentThreadPatterns])];
+        const allPatterns = [...new Set([...globalPatterns, ...(this.sessions?.get(terminalId)?.threadState?.whitelistPatterns ?? [])])];
 
         if (allPatterns.length === 0) {
             this.log(`[Worktree] No whitelist patterns for session ${terminalId}`);
