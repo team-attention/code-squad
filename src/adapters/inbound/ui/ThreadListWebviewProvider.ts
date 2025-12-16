@@ -365,8 +365,8 @@ function render(threads) {
         '<span class="thread-status ' + t.status + '" title="' + getStatusTitle(t.status) + '">' + getStatusIcon(t.status) + '</span>' +
         '<span class="thread-name">' + esc(t.name) + '</span>' +
         '<div class="thread-actions">' +
-        '<button class="thread-action-btn terminal" title="Open Terminal">\uD83D\uDCBB</button>' +
-        (t.hasWorktree ? '<button class="thread-action-btn editor" title="Open in Editor">\uD83D\uDCC1</button>' : '') +
+        '<button class="thread-action-btn terminal" title="Open Terminal"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3 3l4 4-4 4v-1l3-3-3-3V3zm5 7h5v1H8v-1z"/></svg></button>' +
+        (t.hasWorktree ? '<button class="thread-action-btn editor" title="Open in Editor"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1H10v1H2v12h12V6h1v8.5l-.5.5h-13l-.5-.5v-13l.5-.5z"/><path d="M15 1.5V5h-1V2.707L8.354 8.354l-.708-.708L13.293 2H11V1h3.5l.5.5z"/></svg></button>' : '') +
         '<button class="thread-action-btn delete" title="Cleanup">\uD83D\uDDD1\uFE0F</button>' +
         '</div>' +
         '</div>'
