@@ -476,9 +476,10 @@ function render(threads) {
             const isAbove = e.clientY < midY;
 
             // 기존 인디케이터 제거
-            threadList.querySelectorAll('.thread-item').forEach(item => {
-                item.classList.remove('drag-over-top', 'drag-over-bottom');
-            });
+            const currentIndicator = threadList.querySelector('.drag-over-top, .drag-over-bottom');
+            if (currentIndicator) {
+                currentIndicator.classList.remove('drag-over-top', 'drag-over-bottom');
+            }
 
             // 새 인디케이터 표시
             el.classList.add(isAbove ? 'drag-over-top' : 'drag-over-bottom');
