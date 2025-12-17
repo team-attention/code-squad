@@ -56,4 +56,8 @@ export class VscodeFileSystemGateway implements IFileSystemPort {
     async ensureDir(dirPath: string): Promise<void> {
         await fs.promises.mkdir(dirPath, { recursive: true });
     }
+
+    joinPath(...segments: string[]): string {
+        return path.join(...segments);
+    }
 }

@@ -90,6 +90,10 @@ class MockFileSystemPort implements IFileSystemPort {
     async ensureDir(_dirPath: string): Promise<void> {
         // Not needed for GenerateDiffUseCase tests
     }
+
+    joinPath(...segments: string[]): string {
+        return segments.join('/');
+    }
 }
 
 class MockGitPort implements IGitPort {

@@ -56,7 +56,11 @@ export class GenerateDiffUseCase implements IGenerateDiffUseCase {
 
     private async generateSnapshotDiff(relativePath: string): Promise<DiffResult> {
         const snapshot = await this.snapshotRepository.findByPath(relativePath);
-        const absolutePath = this.fileSystemPort.toAbsolutePath(relativePath);
+        // Use workspaceRootOverride for worktree support
+        const workspaceRoot = this.getWorkspaceRoot();
+        const absolutePath = workspaceRoot
+            ? this.fileSystemPort.joinPath(workspaceRoot, relativePath)
+            : relativePath;
 
         let currentContent = '';
         let fileExists = false;

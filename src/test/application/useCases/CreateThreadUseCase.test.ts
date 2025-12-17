@@ -178,6 +178,10 @@ class MockFileSystemPort implements IFileSystemPort {
     async ensureDir(dirPath: string): Promise<void> {
         this.createdDirs.push(dirPath);
     }
+
+    joinPath(...segments: string[]): string {
+        return segments.join('/');
+    }
 }
 
 class MockFileGlobber implements IFileGlobber {

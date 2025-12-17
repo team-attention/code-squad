@@ -79,6 +79,10 @@ class MockFileSystemPort implements IFileSystemPort {
         // Not needed for CaptureSnapshotsUseCase tests
     }
 
+    joinPath(...segments: string[]): string {
+        return segments.join('/');
+    }
+
     // Test helpers
     setFile(absolutePath: string, content: string): void {
         this.files.set(absolutePath, content);

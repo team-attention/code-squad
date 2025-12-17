@@ -95,6 +95,10 @@ class MockFileSystemPort implements IFileSystemPort {
         // Not needed for GenerateScopedDiffUseCase tests
     }
 
+    joinPath(...segments: string[]): string {
+        return segments.join('/');
+    }
+
     setFileContent(content: string): void {
         this.fileContent = content;
     }

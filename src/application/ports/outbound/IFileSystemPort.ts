@@ -7,4 +7,6 @@ export interface IFileSystemPort {
     toRelativePath(absolutePath: string): string;
     copyFile(source: string, dest: string): Promise<void>;
     ensureDir(dirPath: string): Promise<void>;
+    /** Join path segments (platform-independent) */
+    joinPath(...segments: string[]): string;
 }
