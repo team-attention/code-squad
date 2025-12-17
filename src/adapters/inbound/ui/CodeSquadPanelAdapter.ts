@@ -629,7 +629,7 @@ export class CodeSquadPanelAdapter {
     private async handleOpenFile(file: string): Promise<void> {
         if (!file) return;
 
-        const basePath = this.workspaceRoot ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        const basePath = this.workspaceRoot || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         if (!basePath) return;
 
         const absolutePath = path.join(basePath, file);
