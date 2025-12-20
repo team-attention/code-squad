@@ -117,6 +117,16 @@ export function handleLineMouseDown(
   if (target.closest('.line-comment-btn') || target.closest('.inline-comment-form')) {
     return state;
   }
+
+  // If a comment form is open with text, don't start a new selection
+  const existingForm = document.querySelector('.comment-form-row');
+  if (existingForm) {
+    const textarea = existingForm.querySelector('textarea') as HTMLTextAreaElement | null;
+    if (textarea && textarea.value.trim()) {
+      return state;
+    }
+  }
+
   // Don't allow comments on deletion lines
   if (row.classList.contains('deletion')) return state;
 

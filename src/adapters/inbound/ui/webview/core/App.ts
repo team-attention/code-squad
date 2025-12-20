@@ -759,6 +759,15 @@ function setupDiffViewerLineSelection(currentFile: string, vsCodeApi: VSCodeAPI)
     const target = e.target as HTMLElement;
     const btn = target.closest('.line-comment-btn') as HTMLElement | null;
     if (btn) {
+      // If a comment form is open with text, don't open a new one
+      const existingForm = document.querySelector('.comment-form-row');
+      if (existingForm) {
+        const textarea = existingForm.querySelector('textarea') as HTMLTextAreaElement | null;
+        if (textarea && textarea.value.trim()) {
+          return;
+        }
+      }
+
       const lineNum = parseInt(btn.dataset.line || '0');
       const lineElement = btn.closest('tr') as HTMLElement;
       showInlineCommentForm(currentFile, lineElement, lineNum, undefined, handlers);
