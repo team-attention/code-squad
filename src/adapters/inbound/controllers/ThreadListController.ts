@@ -44,7 +44,8 @@ export class ThreadListController {
             (id) => this.openNewTerminal(id),
             () => this.attachToWorktree(),
             (id) => this.deleteThread(id),
-            (id) => this.openInEditor(id)
+            (id) => this.openInEditor(id),
+            () => this.getAvailableWorktreeCount()
         );
 
         // Register webview view provider
@@ -341,6 +342,33 @@ export class ThreadListController {
         const name = threadState?.name ?? context.session.displayName;
 
         await this.terminalGateway.createTerminal(`Terminal: ${name}`, workingDir, true);
+    }
+
+    /**
+     * Get count of available worktrees (not already attached to threads).
+     */
+    private async getAvailableWorktreeCount(): Promise<number> {
+        if (!this.gitPort) return 0;
+
+        const workspaceRoot = this.getWorkspaceRoot();
+        if (!workspaceRoot) return 0;
+
+        try {
+            const allWorktrees = await this.gitPort.listWorktrees(workspaceRoot);
+            if (allWorktrees.length === 0) return 0;
+
+            // Filter out already-attached worktrees
+            const sessions = this.getSessions();
+            const attachedPaths = new Set(
+                Array.from(sessions.values())
+                    .map(ctx => ctx.threadState?.worktreePath)
+                    .filter(Boolean)
+            );
+
+            return allWorktrees.filter(wt => !attachedPaths.has(wt.path)).length;
+        } catch {
+            return 0;
+        }
     }
 
     /**

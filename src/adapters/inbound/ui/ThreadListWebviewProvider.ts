@@ -38,7 +38,8 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         private readonly onOpenNewTerminal: (id: string) => void,
         private readonly onAttachToWorktree: () => void,
         private readonly onDeleteThread?: (threadId: string) => void,
-        private readonly onOpenInEditor?: (threadId: string) => void
+        private readonly onOpenInEditor?: (threadId: string) => void,
+        private readonly getAvailableWorktreeCount?: () => Promise<number>
     ) {}
 
     resolveWebviewView(
@@ -98,13 +99,16 @@ export class ThreadListWebviewProvider implements vscode.WebviewViewProvider {
         this.refresh();
     }
 
-    refresh(): void {
+    async refresh(): Promise<void> {
         if (!this.view) return;
 
         const threads = this.buildThreadList();
+        const availableWorktreeCount = await this.getAvailableWorktreeCount?.() ?? 0;
+
         this.view.webview.postMessage({
             type: 'updateThreads',
-            threads
+            threads,
+            availableWorktreeCount
         });
     }
 
@@ -554,7 +558,14 @@ function render(threads) {
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 window.addEventListener('message', e => {
-    if (e.data.type === 'updateThreads') render(e.data.threads);
+    if (e.data.type === 'updateThreads') {
+        render(e.data.threads);
+        // Hide attach button if no worktrees available
+        const attachBtn = $('attachBtn');
+        if (attachBtn) {
+            attachBtn.style.display = e.data.availableWorktreeCount > 0 ? '' : 'none';
+        }
+    }
     if (e.data.type === 'workspaceInfo') workspaceName = e.data.workspaceName || '';
 });
 
