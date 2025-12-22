@@ -527,6 +527,13 @@ export class ThreadListController {
 
         if (!result || result.title === 'Cancel') return;
 
+        // Remove session BEFORE executing deletion
+        // This prevents handleTerminalClose from showing another dialog
+        // when the terminal is closed by deleteThreadUseCase
+        if (this.removeSession && thread.terminalId) {
+            this.removeSession(thread.terminalId);
+        }
+
         // Execute deletion
         const deleteAll = result.title === 'Delete Worktree Too';
         await this.deleteThreadUseCase.execute({
@@ -535,12 +542,6 @@ export class ThreadListController {
             closeTerminal: true, // Always close terminal when deleting thread
             removeWorktree: deleteAll
         });
-
-        // Remove session from AIDetectionController's sessions Map
-        // This is needed even when terminal is kept, since thread state is deleted
-        if (this.removeSession && thread.terminalId) {
-            this.removeSession(thread.terminalId);
-        }
 
         // Handle selection if deleted thread was selected
         // Use terminalId since that's what selectedThreadId stores
