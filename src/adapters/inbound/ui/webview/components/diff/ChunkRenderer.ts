@@ -43,6 +43,7 @@ declare global {
   interface Window {
     CodeSquadHighlighter?: {
       highlightLines: (lines: string[], language: string) => Promise<string[]>;
+      highlightFullFile: (fullContent: string, language: string) => Promise<Map<number, string>>;
       getLanguageFromPath: (path: string) => string;
     };
   }
@@ -140,33 +141,48 @@ function renderInlineCommentBox(comment: InlineComment): string {
 
 /**
  * Render all diff chunks to HTML with syntax highlighting
+ * @param chunks - Diff chunks to render
+ * @param chunkStates - Collapse states for each chunk
+ * @param comments - Inline comments
+ * @param language - Programming language for syntax highlighting
+ * @param highlightedLineMap - Optional pre-highlighted line map from full file.
+ *   When provided, uses this for accurate syntax highlighting context
+ *   (handles multi-line strings, block comments spanning hunks).
+ *   Keys are 1-indexed line numbers.
  */
 export async function renderChunksToHtml(
   chunks: DiffChunk[],
   chunkStates: ChunkState[],
   comments: InlineComment[] = [],
-  language = 'plaintext'
+  language = 'plaintext',
+  highlightedLineMap?: Map<number, string>
 ): Promise<string> {
   const { byLine: commentsByLine } = buildCommentMaps(comments);
 
-  // Collect all line contents for batch highlighting
-  const allLineContents: string[] = [];
-  for (const chunk of chunks) {
-    for (const line of chunk.lines) {
-      allLineContents.push(line.content);
-    }
-  }
+  // If we have a pre-highlighted full file map, use it directly
+  // Otherwise, fall back to highlighting just the chunk lines
+  let highlightedContents: string[] | null = null;
 
-  // Highlight all lines at once (async)
-  let highlightedContents = allLineContents.map(escapeHtml);
-  if (window.CodeSquadHighlighter && language !== 'plaintext') {
-    try {
-      highlightedContents = await window.CodeSquadHighlighter.highlightLines(
-        allLineContents,
-        language
-      );
-    } catch (e) {
-      console.warn('Syntax highlighting failed:', e);
+  if (!highlightedLineMap) {
+    // Collect all line contents for batch highlighting (legacy fallback)
+    const allLineContents: string[] = [];
+    for (const chunk of chunks) {
+      for (const line of chunk.lines) {
+        allLineContents.push(line.content);
+      }
+    }
+
+    // Highlight all lines at once (async)
+    highlightedContents = allLineContents.map(escapeHtml);
+    if (window.CodeSquadHighlighter && language !== 'plaintext') {
+      try {
+        highlightedContents = await window.CodeSquadHighlighter.highlightLines(
+          allLineContents,
+          language
+        );
+      } catch (e) {
+        console.warn('Syntax highlighting failed:', e);
+      }
     }
   }
 
@@ -196,8 +212,23 @@ export async function renderChunksToHtml(
     for (const line of chunk.lines) {
       const lineNum = line.newLineNumber || line.oldLineNumber || 0;
       const isDeletion = line.type === 'deletion';
-      const highlightedContent =
-        highlightedContents[lineIndex++] || escapeHtml(line.content);
+
+      // Get highlighted content: prefer full-file map, fallback to batch highlighting
+      let highlightedContent: string;
+      if (highlightedLineMap && lineNum > 0) {
+        // For additions/context, use newLineNumber from the full file map
+        // For deletions, we don't have the line in the new file, so escape the content
+        if (isDeletion) {
+          highlightedContent = escapeHtml(line.content);
+        } else {
+          highlightedContent = highlightedLineMap.get(lineNum) || escapeHtml(line.content);
+        }
+      } else if (highlightedContents) {
+        highlightedContent = highlightedContents[lineIndex] || escapeHtml(line.content);
+      } else {
+        highlightedContent = escapeHtml(line.content);
+      }
+      lineIndex++;
 
       const hasComments = !isDeletion && commentsByLine.has(lineNum);
       const lineComments = hasComments ? commentsByLine.get(lineNum)! : [];

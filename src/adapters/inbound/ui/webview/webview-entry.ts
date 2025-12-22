@@ -120,6 +120,55 @@ async function highlightLines(
 }
 
 /**
+ * Highlight full file content and return a map of line numbers to highlighted HTML.
+ * Line numbers are 1-indexed.
+ * This is used for diff view to ensure proper syntax highlighting context
+ * (e.g., multi-line strings, block comments that span across hunks).
+ */
+async function highlightFullFile(
+    fullContent: string,
+    language: string
+): Promise<Map<number, string>> {
+    const resultMap = new Map<number, string>();
+    const lines = fullContent.split('\n');
+
+    const hl = await initHighlighter();
+    const loadedLangs = hl.getLoadedLanguages();
+
+    if (!loadedLangs.includes(language)) {
+        // Fall back to escaped plain text
+        lines.forEach((line, idx) => {
+            resultMap.set(idx + 1, escapeHtmlForHighlight(line));
+        });
+        return resultMap;
+    }
+
+    try {
+        const html = hl.codeToHtml(fullContent, {
+            lang: language,
+            theme: getThemeName(),
+        });
+
+        const match = html.match(/<code[^>]*>([\s\S]*)<\/code>/);
+        if (match) {
+            const highlightedLines = match[1].split('\n');
+            highlightedLines.forEach((line, idx) => {
+                resultMap.set(idx + 1, line);
+            });
+            return resultMap;
+        }
+    } catch {
+        // Fall through to plain text
+    }
+
+    // Fallback: escape each line
+    lines.forEach((line, idx) => {
+        resultMap.set(idx + 1, escapeHtmlForHighlight(line));
+    });
+    return resultMap;
+}
+
+/**
  * Highlight code block for markdown
  */
 async function highlightCodeBlock(
@@ -202,6 +251,7 @@ declare global {
     interface Window {
         CodeSquadHighlighter: {
             highlightLines: typeof highlightLines;
+            highlightFullFile: typeof highlightFullFile;
             highlightCodeBlock: typeof highlightCodeBlock;
             getLanguageFromPath: typeof getLanguageFromPath;
             preload: () => void;
@@ -211,6 +261,7 @@ declare global {
 
 window.CodeSquadHighlighter = {
     highlightLines,
+    highlightFullFile,
     highlightCodeBlock,
     getLanguageFromPath,
     preload: () => {

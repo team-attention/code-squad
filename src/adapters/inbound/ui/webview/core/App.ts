@@ -77,6 +77,7 @@ declare global {
   interface Window {
     CodeSquadHighlighter?: {
       highlightLines: (lines: string[], language: string) => Promise<string[]>;
+      highlightFullFile: (fullContent: string, language: string) => Promise<Map<number, string>>;
       highlightCodeBlock: (code: string, language: string) => Promise<string>;
       getLanguageFromPath: (filePath: string) => string;
       preload: () => void;
@@ -195,6 +196,8 @@ interface DiffData {
   chunks: DiffChunk[];
   stats: { additions: number; deletions: number };
   chunkStates?: ChunkState[];
+  /** Full new file content for proper syntax highlighting context */
+  newFileContent?: string;
 }
 
 interface DiffChunk {
@@ -613,12 +616,26 @@ async function renderDiff(
     ? window.CodeSquadHighlighter.getLanguageFromPath(diff.file)
     : 'plaintext';
 
+  // Highlight full file for proper syntax context (multi-line strings, block comments)
+  let highlightedLineMap: Map<number, string> | undefined;
+  if (diff.newFileContent && window.CodeSquadHighlighter && language !== 'plaintext') {
+    try {
+      highlightedLineMap = await window.CodeSquadHighlighter.highlightFullFile(
+        diff.newFileContent,
+        language
+      );
+    } catch (e) {
+      console.warn('Full file syntax highlighting failed:', e);
+    }
+  }
+
   // Render diff table
   const chunksHtml = await renderChunksToHtml(
     diff.chunks as DiffChunk[],
     chunkStates,
     fileComments,
-    language
+    language,
+    highlightedLineMap
   );
 
   viewer.innerHTML = `

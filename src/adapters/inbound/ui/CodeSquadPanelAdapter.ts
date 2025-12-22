@@ -329,18 +329,23 @@ export class CodeSquadPanelAdapter {
             return;
         }
 
-        // For non-markdown files, prefetch scopes and scoped diff in parallel
-        const [scopes, scopedResult] = await Promise.all([
+        // For non-markdown files, prefetch scopes, scoped diff, and full content in parallel
+        const [scopes, scopedResult, fullContent] = await Promise.all([
             this.prefetchScopes(file, diffResult),
             this.generateScopedDiffUseCase
                 ? this.generateScopedDiffUseCase.execute(file).catch(error => {
                     console.warn('[Code Squad] Scoped diff failed:', error);
                     return null;
                 })
-                : Promise.resolve(null)
+                : Promise.resolve(null),
+            this.readFullFileContent(file)
         ]);
 
         const displayState = this.createDiffDisplayState(diffResult, scopes);
+        // Include full file content for proper syntax highlighting context
+        if (fullContent !== null) {
+            displayState.newFileContent = fullContent;
+        }
         const scopedDisplayState = scopedResult?.hasScopeData
             ? this.createScopedDiffDisplayState(scopedResult)
             : null;
