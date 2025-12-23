@@ -387,7 +387,7 @@ function render(threads) {
         return;
     }
 
-    threadList.innerHTML = threads.map(t => {
+    threadList.innerHTML = threads.reverse().map(t => {
         const isolationLabel = t.isolationMode === 'worktree' ? 'Worktree'
             : t.isolationMode === 'branch' ? 'Branch'
             : 'Local';
