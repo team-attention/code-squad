@@ -14,6 +14,11 @@ export class VscodeTerminalGateway implements ITerminalPort {
     // Track pending executions for terminals not yet registered
     private pendingExecutions = new Map<vscode.Terminal, vscode.TerminalShellExecution>();
 
+    // Throttling for terminal output to prevent VSCode crash from high-frequency updates
+    private static OUTPUT_THROTTLE_MS = 100;
+    private outputBuffers = new Map<string, string>();
+    private outputThrottleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
     constructor() {
         this.debugChannel = vscode.window.createOutputChannel('Code Squad Terminal');
     }
@@ -70,13 +75,32 @@ export class VscodeTerminalGateway implements ITerminalPort {
     }
 
     private notifyOutput(terminalId: string, data: string): void {
-        for (const callback of this.outputCallbacks) {
-            try {
-                callback(terminalId, data);
-            } catch {
-                // Ignore callback errors
-            }
+        // Accumulate output in buffer
+        const currentBuffer = this.outputBuffers.get(terminalId) ?? '';
+        this.outputBuffers.set(terminalId, currentBuffer + data);
+
+        // If timer already running, let it handle the accumulated buffer
+        if (this.outputThrottleTimers.has(terminalId)) {
+            return;
         }
+
+        // Schedule throttled notification
+        const timer = setTimeout(() => {
+            this.outputThrottleTimers.delete(terminalId);
+            const bufferedData = this.outputBuffers.get(terminalId);
+            if (bufferedData) {
+                this.outputBuffers.set(terminalId, '');
+                for (const callback of this.outputCallbacks) {
+                    try {
+                        callback(terminalId, bufferedData);
+                    } catch {
+                        // Ignore callback errors
+                    }
+                }
+            }
+        }, VscodeTerminalGateway.OUTPUT_THROTTLE_MS);
+
+        this.outputThrottleTimers.set(terminalId, timer);
     }
 
     private setActivity(terminalId: string, hasActivity: boolean): void {
@@ -152,6 +176,14 @@ export class VscodeTerminalGateway implements ITerminalPort {
 
         // Clean up activity tracking
         this.isActive.delete(id);
+
+        // Clean up throttle resources
+        const timer = this.outputThrottleTimers.get(id);
+        if (timer) {
+            clearTimeout(timer);
+            this.outputThrottleTimers.delete(id);
+        }
+        this.outputBuffers.delete(id);
     }
 
     getTerminal(id: string): vscode.Terminal | undefined {
