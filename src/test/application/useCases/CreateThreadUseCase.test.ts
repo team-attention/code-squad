@@ -70,7 +70,7 @@ class MockTerminalPort implements ITerminalPort {
         // Not needed for tests
     }
 
-    closeTerminal(_terminalId: string): void {
+    async closeTerminal(_terminalId: string): Promise<void> {
         // Not needed for tests
     }
 

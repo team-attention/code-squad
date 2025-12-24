@@ -41,7 +41,7 @@ class MockTerminalPort implements ITerminalPort {
     onTerminalOutput(_callback: (terminalId: string, data: string) => void): void {}
     onCommandExecuted(_callback: (terminalId: string, command: string) => void): void {}
     onCommandEnded(_callback: (terminalId: string, command: string) => void): void {}
-    closeTerminal(_terminalId: string): void {}
+    async closeTerminal(_terminalId: string): Promise<void> {}
     updateTerminalName(_terminalId: string, _newName: string): void {}
     getDisplayName(_terminalId: string): string | undefined { return undefined; }
 }

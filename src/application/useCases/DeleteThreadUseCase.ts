@@ -35,7 +35,7 @@ export class DeleteThreadUseCase implements IDeleteThreadUseCase {
 
         // 2. Close terminal if requested
         if (closeTerminal && threadState.terminalId) {
-            this.terminalPort.closeTerminal(threadState.terminalId);
+            await this.terminalPort.closeTerminal(threadState.terminalId);
             terminalClosed = true;
         }
 

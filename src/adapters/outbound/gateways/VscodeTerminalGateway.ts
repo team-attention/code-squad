@@ -250,11 +250,12 @@ export class VscodeTerminalGateway implements ITerminalPort {
         return terminalId;
     }
 
-    closeTerminal(terminalId: string): void {
+    async closeTerminal(terminalId: string): Promise<void> {
         const terminal = this.terminals.get(terminalId);
         if (terminal) {
             // First, close the terminal tab if it's opened in editor area
-            this.closeTerminalTab(terminal);
+            // Must await to ensure tab is closed before disposing terminal
+            await this.closeTerminalTab(terminal);
             terminal.dispose();
             this.unregisterTerminal(terminalId);
         }
@@ -265,7 +266,7 @@ export class VscodeTerminalGateway implements ITerminalPort {
      * When terminal is created with viewColumn (not Panel location),
      * it opens as an editor tab that needs to be explicitly closed.
      */
-    private closeTerminalTab(terminal: vscode.Terminal): void {
+    private async closeTerminalTab(terminal: vscode.Terminal): Promise<void> {
         const terminalName = terminal.name;
         // Find and close the tab associated with this terminal
         for (const tabGroup of vscode.window.tabGroups.all) {
@@ -273,9 +274,11 @@ export class VscodeTerminalGateway implements ITerminalPort {
                 // Terminal tabs have TabInputTerminal as their input
                 // Match by tab label since TabInputTerminal doesn't expose terminal reference
                 if (tab.input instanceof vscode.TabInputTerminal && tab.label === terminalName) {
-                    vscode.window.tabGroups.close(tab).then(undefined, (err) => {
+                    try {
+                        await vscode.window.tabGroups.close(tab);
+                    } catch (err) {
                         this.log(`Failed to close terminal tab: ${err}`);
-                    });
+                    }
                     return;
                 }
             }

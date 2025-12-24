@@ -35,5 +35,5 @@ export interface ITerminalPort {
      * Disposes the terminal instance.
      * No-op if terminal doesn't exist.
      */
-    closeTerminal(terminalId: string): void;
+    closeTerminal(terminalId: string): Promise<void>;
 }
