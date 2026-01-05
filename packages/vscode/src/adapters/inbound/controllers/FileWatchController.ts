@@ -400,8 +400,25 @@ export class FileWatchController {
         const pattern = new vscode.RelativePattern(workspaceFolders[0], '**/*');
         this.mainWorkspaceWatcher = vscode.workspace.createFileSystemWatcher(pattern);
 
-        const handleFileChange = (uri: vscode.Uri, eventType: 'create' | 'change') => {
+        const handleFileChange = async (uri: vscode.Uri, eventType: 'create' | 'change') => {
             if (!this.batchCollector) return;
+
+            // Filter out directory events - VSCode FileSystemWatcher fires for both files and directories
+            try {
+                const stat = await fs.promises.stat(uri.fsPath);
+                if (stat.isDirectory()) {
+                    this.log(`[Main:FSW] Skipping directory event: ${uri.fsPath}`);
+                    return;
+                }
+            } catch (error) {
+                // ENOENT is expected if file was deleted between event and check
+                if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                    return;
+                }
+                // Log unexpected errors for debugging
+                this.logError(`[Main:FSW] Error checking path: ${uri.fsPath}`, error);
+                return;
+            }
 
             const relativePath = vscode.workspace.asRelativePath(uri);
 
@@ -1061,7 +1078,24 @@ export class FileWatchController {
             );
             const fileWatcher = vscode.workspace.createFileSystemWatcher(worktreePattern);
 
-            const handleFileChange = (uri: vscode.Uri, eventType: 'create' | 'change') => {
+            const handleFileChange = async (uri: vscode.Uri, eventType: 'create' | 'change') => {
+                // Filter out directory events - VSCode FileSystemWatcher fires for both files and directories
+                try {
+                    const stat = await fs.promises.stat(uri.fsPath);
+                    if (stat.isDirectory()) {
+                        this.log(`[Worktree:FSW] Skipping directory event: ${uri.fsPath}`);
+                        return;
+                    }
+                } catch (error) {
+                    // ENOENT is expected if file was deleted between event and check
+                    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                        return;
+                    }
+                    // Log unexpected errors for debugging
+                    this.logError(`[Worktree:FSW] Error checking path: ${uri.fsPath}`, error);
+                    return;
+                }
+
                 const relativePath = path.relative(sessionWorkspaceRoot, uri.fsPath);
 
                 // Skip .git directory
