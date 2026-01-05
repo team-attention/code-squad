@@ -4,6 +4,7 @@ import { ITerminalPort, TerminalActivityCallback, TerminalOutputCallback, Termin
 export class VscodeTerminalGateway implements ITerminalPort {
     private terminals = new Map<string, vscode.Terminal>();
     private terminalToId = new Map<vscode.Terminal, string>();
+    private terminalTabs = new Map<string, vscode.Tab>();
     private activityCallbacks: TerminalActivityCallback[] = [];
     private outputCallbacks: TerminalOutputCallback[] = [];
     private commandCallbacks: TerminalCommandCallback[] = [];
@@ -173,6 +174,7 @@ export class VscodeTerminalGateway implements ITerminalPort {
             this.terminalToId.delete(terminal);
         }
         this.terminals.delete(id);
+        this.terminalTabs.delete(id);
 
         // Clean up activity tracking
         this.isActive.delete(id);
@@ -247,41 +249,47 @@ export class VscodeTerminalGateway implements ITerminalPort {
 
         this.registerTerminal(terminalId, terminal);
 
+        // Store terminal tab reference for later closing
+        if (!openInPanel) {
+            const tab = this.findTerminalTab(name);
+            if (tab) {
+                this.terminalTabs.set(terminalId, tab);
+            }
+        }
+
         return terminalId;
+    }
+
+    private findTerminalTab(terminalName: string): vscode.Tab | undefined {
+        for (const tabGroup of vscode.window.tabGroups.all) {
+            for (const tab of tabGroup.tabs) {
+                if (tab.input instanceof vscode.TabInputTerminal && tab.label === terminalName) {
+                    return tab;
+                }
+            }
+        }
+        return undefined;
     }
 
     async closeTerminal(terminalId: string): Promise<void> {
         const terminal = this.terminals.get(terminalId);
         if (terminal) {
-            // First, close the terminal tab if it's opened in editor area
-            // Must await to ensure tab is closed before disposing terminal
-            await this.closeTerminalTab(terminal);
+            // Close the stored terminal tab
+            await this.closeTerminalTab(terminalId);
             terminal.dispose();
             this.unregisterTerminal(terminalId);
         }
     }
 
-    /**
-     * Close the terminal tab if the terminal is opened in editor area.
-     * When terminal is created with viewColumn (not Panel location),
-     * it opens as an editor tab that needs to be explicitly closed.
-     */
-    private async closeTerminalTab(terminal: vscode.Terminal): Promise<void> {
-        const terminalName = terminal.name;
-        // Find and close the tab associated with this terminal
-        for (const tabGroup of vscode.window.tabGroups.all) {
-            for (const tab of tabGroup.tabs) {
-                // Terminal tabs have TabInputTerminal as their input
-                // Match by tab label since TabInputTerminal doesn't expose terminal reference
-                if (tab.input instanceof vscode.TabInputTerminal && tab.label === terminalName) {
-                    try {
-                        await vscode.window.tabGroups.close(tab);
-                    } catch (err) {
-                        this.log(`Failed to close terminal tab: ${err}`);
-                    }
-                    return;
-                }
+    private async closeTerminalTab(terminalId: string): Promise<void> {
+        const tab = this.terminalTabs.get(terminalId);
+        if (tab) {
+            try {
+                await vscode.window.tabGroups.close(tab);
+            } catch (err) {
+                this.log(`Failed to close terminal tab: ${err}`);
             }
+            this.terminalTabs.delete(terminalId);
         }
     }
 }
