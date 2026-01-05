@@ -8,7 +8,7 @@
     "build": "tsc",
     "build:watch": "tsc --watch",
     "type-check": "tsc --noEmit",
-    "clean": "rimraf dist",
+    "clean": "rimraf dist tsconfig.tsbuildinfo",
     "test": "tsx node_modules/mocha/bin/mocha --ui tdd ./src/test/**/*.test.ts"
   },
   "devDependencies": {
