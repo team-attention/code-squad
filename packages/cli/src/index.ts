@@ -15,6 +15,11 @@ import {
 } from './ui/prompts.js';
 import type { WorktreeInfo } from '@code-squad/core';
 
+// Ctrl+C 시 깔끔하게 종료
+process.on('SIGINT', () => {
+    process.exit(130);
+});
+
 const gitAdapter = new GitAdapter();
 
 // 로컬 스레드 타입
@@ -476,6 +481,10 @@ async function runInteraction(workspaceRoot: string, _persistent = false): Promi
 }
 
 main().catch((error) => {
+    // Ctrl+C로 종료 시 조용히 종료
+    if (error.message?.includes('SIGINT') || error.message?.includes('force closed')) {
+        process.exit(130);
+    }
     console.error(chalk.red(`Error: ${error.message}`));
     process.exit(1);
 });
