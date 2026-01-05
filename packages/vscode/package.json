@@ -2,7 +2,7 @@
   "name": "code-squad",
   "displayName": "Code Squad",
   "description": "Immersive multi-agent coding - manage parallel AI sessions without context switching",
-  "version": "0.1.32",
+  "version": "0.1.33",
   "publisher": "JakePark",
   "repository": {
     "type": "git",
@@ -132,11 +132,9 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run esbuild-base -- --minify && npm run esbuild-webview -- --minify",
-    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --alias:@code-squad/core=../core/dist",
-    "esbuild-webview": "esbuild ./src/adapters/inbound/ui/webview/webview-entry.ts --bundle --outfile=dist/webview.js --format=iife --platform=browser --target=es2020",
-    "esbuild": "npm run esbuild-base -- --sourcemap && npm run esbuild-webview -- --sourcemap",
-    "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
+    "vscode:prepublish": "node esbuild.config.js --minify",
+    "esbuild": "node esbuild.config.js",
+    "esbuild-watch": "node esbuild.config.js --watch",
     "build": "npm run esbuild",
     "compile": "tsc -p ./",
     "type-check": "tsc --noEmit",
