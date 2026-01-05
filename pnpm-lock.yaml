@@ -14,9 +14,6 @@ importers:
 
   packages/cli:
     dependencies:
-      '@code-squad/core':
-        specifier: workspace:*
-        version: link:../core
       '@inquirer/core':
         specifier: ^11.1.0
         version: 11.1.0(@types/node@20.19.27)
@@ -27,6 +24,9 @@ importers:
         specifier: ^5.4.1
         version: 5.6.2
     devDependencies:
+      '@code-squad/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: 20.x
         version: 20.19.27
