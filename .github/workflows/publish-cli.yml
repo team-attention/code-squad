@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Build core
+        run: pnpm --filter @code-squad/core build
+
       - name: Build CLI
         run: pnpm --filter code-squad-cli build
 
