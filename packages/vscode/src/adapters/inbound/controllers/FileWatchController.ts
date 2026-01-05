@@ -400,8 +400,20 @@ export class FileWatchController {
         const pattern = new vscode.RelativePattern(workspaceFolders[0], '**/*');
         this.mainWorkspaceWatcher = vscode.workspace.createFileSystemWatcher(pattern);
 
-        const handleFileChange = (uri: vscode.Uri, eventType: 'create' | 'change') => {
+        const handleFileChange = async (uri: vscode.Uri, eventType: 'create' | 'change') => {
             if (!this.batchCollector) return;
+
+            // Filter out directory events - VSCode FileSystemWatcher fires for both files and directories
+            try {
+                const stat = await fs.promises.stat(uri.fsPath);
+                if (stat.isDirectory()) {
+                    this.log(`[Main:FSW] Skipping directory event: ${uri.fsPath}`);
+                    return;
+                }
+            } catch {
+                // File may have been deleted between event and check, skip silently
+                return;
+            }
 
             const relativePath = vscode.workspace.asRelativePath(uri);
 
@@ -1061,7 +1073,19 @@ export class FileWatchController {
             );
             const fileWatcher = vscode.workspace.createFileSystemWatcher(worktreePattern);
 
-            const handleFileChange = (uri: vscode.Uri, eventType: 'create' | 'change') => {
+            const handleFileChange = async (uri: vscode.Uri, eventType: 'create' | 'change') => {
+                // Filter out directory events - VSCode FileSystemWatcher fires for both files and directories
+                try {
+                    const stat = await fs.promises.stat(uri.fsPath);
+                    if (stat.isDirectory()) {
+                        this.log(`[Worktree:FSW] Skipping directory event: ${uri.fsPath}`);
+                        return;
+                    }
+                } catch {
+                    // File may have been deleted between event and check, skip silently
+                    return;
+                }
+
                 const relativePath = path.relative(sessionWorkspaceRoot, uri.fsPath);
 
                 // Skip .git directory
