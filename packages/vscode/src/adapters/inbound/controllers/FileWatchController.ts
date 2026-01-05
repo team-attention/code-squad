@@ -410,8 +410,13 @@ export class FileWatchController {
                     this.log(`[Main:FSW] Skipping directory event: ${uri.fsPath}`);
                     return;
                 }
-            } catch {
-                // File may have been deleted between event and check, skip silently
+            } catch (error) {
+                // ENOENT is expected if file was deleted between event and check
+                if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                    return;
+                }
+                // Log unexpected errors for debugging
+                this.logError(`[Main:FSW] Error checking path: ${uri.fsPath}`, error);
                 return;
             }
 
@@ -1081,8 +1086,13 @@ export class FileWatchController {
                         this.log(`[Worktree:FSW] Skipping directory event: ${uri.fsPath}`);
                         return;
                     }
-                } catch {
-                    // File may have been deleted between event and check, skip silently
+                } catch (error) {
+                    // ENOENT is expected if file was deleted between event and check
+                    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                        return;
+                    }
+                    // Log unexpected errors for debugging
+                    this.logError(`[Worktree:FSW] Error checking path: ${uri.fsPath}`, error);
                     return;
                 }
 
