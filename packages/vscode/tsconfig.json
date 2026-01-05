@@ -1,5 +1,9 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@code-squad/core": ["../core/dist"]
+    },
     "target": "ES2022",
     "module": "Node16",
     "moduleResolution": "Node16",
