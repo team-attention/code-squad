@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "code-squad-monorepo",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "description": "Code Squad monorepo - VS Code extension for multi-agent coding",
   "repository": {
     "type": "git",
