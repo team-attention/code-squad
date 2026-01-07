@@ -2,6 +2,8 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
+import * as crypto from 'crypto';
 import chalk from 'chalk';
 import { GitAdapter } from './adapters/GitAdapter.js';
 import {
@@ -90,10 +92,19 @@ async function findGitRoot(cwd: string): Promise<string | null> {
 }
 
 /**
- * 세션 파일 경로
+ * Generate a short hash for project identification
+ */
+function getProjectHash(workspaceRoot: string): string {
+    return crypto.createHash('sha256').update(workspaceRoot).digest('hex').slice(0, 8);
+}
+
+/**
+ * 세션 파일 경로 - stored in global ~/.code-squad directory
  */
 function getSessionsPath(workspaceRoot: string): string {
-    return path.join(workspaceRoot, '.code-squad', 'sessions.json');
+    const projectHash = getProjectHash(workspaceRoot);
+    const projectName = path.basename(workspaceRoot);
+    return path.join(os.homedir(), '.code-squad', 'sessions', `${projectName}-${projectHash}.json`);
 }
 
 /**
@@ -332,7 +343,8 @@ end tell`;
 async function interactiveMode(workspaceRoot: string) {
     const result = await runInteraction(workspaceRoot);
     if (result?.cdPath) {
-        await writeCdFile(result.cdPath);
+        // Open new terminal for the selected/created thread
+        await openNewTerminal(result.cdPath);
     }
 }
 
