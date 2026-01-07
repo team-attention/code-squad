@@ -95,7 +95,7 @@ async function findGitRoot(cwd: string): Promise<string | null> {
  * Generate a short hash for project identification
  */
 function getProjectHash(workspaceRoot: string): string {
-    return crypto.createHash('md5').update(workspaceRoot).digest('hex').slice(0, 8);
+    return crypto.createHash('sha256').update(workspaceRoot).digest('hex').slice(0, 8);
 }
 
 /**
@@ -345,7 +345,6 @@ async function interactiveMode(workspaceRoot: string) {
     if (result?.cdPath) {
         // Open new terminal for the selected/created thread
         await openNewTerminal(result.cdPath);
-        await writeCdFile(result.cdPath);
     }
 }
 
