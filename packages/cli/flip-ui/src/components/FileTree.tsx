@@ -1,6 +1,36 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useAppStore } from '../store/appStore'
+import { useUIStore } from '../store/uiStore'
 import { api, type FileNode } from '../api'
+
+// Filter tree to only include paths with git changes
+function filterTreeToChangedFiles(
+  tree: FileNode[],
+  changedPaths: Set<string>
+): FileNode[] {
+  return tree
+    .map((node) => {
+      if (node.type === 'file') {
+        return changedPaths.has(node.path) ? node : null
+      }
+
+      // For directories, recursively filter children
+      const filteredChildren = node.children
+        ? filterTreeToChangedFiles(node.children, changedPaths)
+        : []
+
+      // Only include directory if it has changed children
+      if (filteredChildren.length > 0) {
+        return {
+          ...node,
+          children: filteredChildren,
+        }
+      }
+
+      return null
+    })
+    .filter((node): node is FileNode => node !== null)
+}
 
 function FileTree() {
   const {
@@ -10,6 +40,8 @@ function FileTree() {
     setCurrentFile,
     gitStatus,
   } = useAppStore()
+
+  const { showOnlyGitChanged, toggleGitFilter } = useUIStore()
 
   const handleFileClick = useCallback(
     async (path: string) => {
@@ -22,6 +54,23 @@ function FileTree() {
     },
     [setCurrentFile]
   )
+
+  // Get all changed file paths
+  const changedPaths = useMemo(() => {
+    if (!gitStatus?.isGitRepo) return new Set<string>()
+    return new Set(gitStatus.unstaged.map((f) => f.path))
+  }, [gitStatus])
+
+  // Count of changed files
+  const changedCount = changedPaths.size
+
+  // Filter tree if git filter is active
+  const displayTree = useMemo(() => {
+    if (!showOnlyGitChanged || changedPaths.size === 0) {
+      return fileTree
+    }
+    return filterTreeToChangedFiles(fileTree, changedPaths)
+  }, [fileTree, showOnlyGitChanged, changedPaths])
 
   const getGitStatusForPath = (path: string) => {
     if (!gitStatus?.isGitRepo) return null
@@ -75,9 +124,29 @@ function FileTree() {
 
   return (
     <div className="file-tree">
-      <div className="file-tree-header">Files</div>
+      <div className="file-tree-header">
+        <span>Files</span>
+        {gitStatus?.isGitRepo && changedCount > 0 && (
+          <div className="file-tree-header-actions">
+            <button
+              className={`filter-btn ${showOnlyGitChanged ? 'active' : ''}`}
+              onClick={toggleGitFilter}
+              title="Show only changed files (Cmd+G)"
+            >
+              Git
+              <span className="count">{changedCount}</span>
+            </button>
+          </div>
+        )}
+      </div>
       <div className="file-tree-content">
-        {fileTree.map((node) => renderNode(node))}
+        {displayTree.length === 0 ? (
+          <div className="staging-list-empty">
+            <p className="staging-hint">No files to display</p>
+          </div>
+        ) : (
+          displayTree.map((node) => renderNode(node))
+        )}
       </div>
     </div>
   )

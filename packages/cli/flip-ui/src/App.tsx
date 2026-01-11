@@ -4,8 +4,10 @@ import CodeViewer from './components/CodeViewer'
 import StagingList from './components/StagingList'
 import CommentInput from './components/CommentInput'
 import FuzzyFinder from './components/FuzzyFinder'
+import Toolbar from './components/Toolbar'
 import { useAppStore } from './store/appStore'
 import { useStagingStore } from './store/stagingStore'
+import { useUIStore } from './store/uiStore'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { api } from './api'
 
@@ -22,6 +24,16 @@ function App() {
   } = useAppStore()
 
   const { items: stagedItems, addItem } = useStagingStore()
+
+  const {
+    leftPanelVisible,
+    rightPanelVisible,
+    toggleLeftPanel,
+    toggleRightPanel,
+    toggleAllPanels,
+    toggleGitFilter,
+    cycleDiffViewMode,
+  } = useUIStore()
 
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -69,6 +81,11 @@ function App() {
         setIsSubmitting(false)
       }
     },
+    onToggleLeftPanel: toggleLeftPanel,
+    onToggleRightPanel: toggleRightPanel,
+    onToggleAllPanels: toggleAllPanels,
+    onToggleGitFilter: toggleGitFilter,
+    onCycleDiffMode: cycleDiffViewMode,
   })
 
   const handleCommentSubmit = (comment: string) => {
@@ -107,14 +124,15 @@ function App() {
 
   return (
     <div className="app">
+      <Toolbar />
       <div className="main-content">
-        <aside className="sidebar">
+        <aside className={`sidebar ${!leftPanelVisible ? 'collapsed' : ''}`}>
           <FileTree />
         </aside>
         <main className="content">
           <CodeViewer />
         </main>
-        <aside className="staging-panel">
+        <aside className={`staging-panel ${!rightPanelVisible ? 'collapsed' : ''}`}>
           <StagingList />
         </aside>
       </div>

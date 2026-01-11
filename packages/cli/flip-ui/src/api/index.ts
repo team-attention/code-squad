@@ -28,6 +28,26 @@ export interface GitStatusResponse {
   }>
 }
 
+export interface DiffLine {
+  type: 'context' | 'add' | 'delete'
+  content: string
+  oldLineNumber?: number
+  newLineNumber?: number
+}
+
+export interface DiffHunk {
+  oldStart: number
+  oldLines: number
+  newStart: number
+  newLines: number
+  lines: DiffLine[]
+}
+
+export interface FileDiff {
+  hunks: DiffHunk[]
+  status: 'modified' | 'added' | 'deleted' | 'untracked'
+}
+
 export interface SubmitItem {
   filePath: string
   startLine: number
@@ -57,6 +77,17 @@ export const api = {
   async getGitStatus(): Promise<GitStatusResponse> {
     const res = await fetch('/api/git/status')
     if (!res.ok) throw new Error('Failed to fetch git status')
+    return res.json()
+  },
+
+  async getFileDiff(path: string): Promise<FileDiff> {
+    const res = await fetch(`/api/git/diff?path=${encodeURIComponent(path)}`)
+    if (!res.ok) {
+      if (res.status === 404) {
+        return { hunks: [], status: 'modified' }
+      }
+      throw new Error('Failed to fetch diff')
+    }
     return res.json()
   },
 
