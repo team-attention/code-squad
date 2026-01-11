@@ -12,13 +12,15 @@ export function createStaticRouter(): IRouter {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
 
-    // Detect if running from bundled index.js or unbundled source
-    // - Bundled: __filename = dist/index.js → flip-ui is at dist/flip-ui/dist
-    // - Unbundled: __filename = src/flip/routes/static.ts → flip-ui is at packages/cli/flip-ui/dist
-    const isBundled = path.basename(__filename) === 'index.js';
-    const distPath = isBundled
-        ? path.resolve(__dirname, 'flip-ui/dist')
-        : path.resolve(__dirname, '../../../flip-ui/dist');
+    // First, check for the bundled path. This is more robust than checking the filename.
+    // - Bundled: dist/flip-ui/dist
+    let distPath = path.resolve(__dirname, 'flip-ui/dist');
+
+    // If the bundled path doesn't exist, fall back to the unbundled (development) path.
+    // - Unbundled: packages/cli/flip-ui/dist
+    if (!fs.existsSync(distPath)) {
+        distPath = path.resolve(__dirname, '../../../flip-ui/dist');
+    }
 
     // Check if dist exists (for development vs production)
     if (fs.existsSync(distPath)) {
