@@ -319,6 +319,47 @@ async function writeCdFile(targetPath: string) {
 }
 
 /**
+ * 현재 터미널에 cd 명령어 전송 (AppleScript)
+ */
+async function cdInCurrentTerminal(targetPath: string): Promise<boolean> {
+    const { exec } = await import('child_process');
+    const escapedPath = targetPath.replace(/'/g, "'\\''");
+
+    // iTerm2 확인
+    const hasIterm = await new Promise<boolean>((resolve) => {
+        exec('mdfind "kMDItemCFBundleIdentifier == com.googlecode.iterm2"', (error, stdout) => {
+            resolve(!error && stdout.trim().length > 0);
+        });
+    });
+
+    if (hasIterm) {
+        // iTerm2 - 현재 세션에 cd 명령어 전송
+        const script = `
+tell application "iTerm2"
+    tell current session of current window
+        write text "cd '${escapedPath}'"
+    end tell
+end tell`;
+        return new Promise((resolve) => {
+            exec(`osascript -e '${script}'`, (error) => {
+                resolve(!error);
+            });
+        });
+    }
+
+    // Terminal.app
+    const terminalScript = `
+tell application "Terminal"
+    do script "cd '${escapedPath}'" in front window
+end tell`;
+    return new Promise((resolve) => {
+        exec(`osascript -e '${terminalScript}'`, (error) => {
+            resolve(!error);
+        });
+    });
+}
+
+/**
  * 새 터미널 split pane 열기
  */
 async function openNewTerminal(targetPath: string): Promise<boolean> {
@@ -333,7 +374,7 @@ async function openNewTerminal(targetPath: string): Promise<boolean> {
     });
 
     if (hasIterm) {
-        // iTerm2 split pane - 새로 생긴 세션에 명시적으로 명령 전달
+        // iTerm2 split pane
         const script = `
 tell application "iTerm2"
     tell current session of current window
@@ -345,17 +386,12 @@ tell application "iTerm2"
 end tell`;
         return new Promise((resolve) => {
             exec(`osascript -e '${script}'`, (error) => {
-                if (error) {
-                    console.error(chalk.red('Failed to open iTerm2 split pane'));
-                    resolve(false);
-                } else {
-                    resolve(true);
-                }
+                resolve(!error);
             });
         });
     }
 
-    // Terminal.app fallback (split 미지원, 새 창)
+    // Terminal.app fallback (새 창)
     const terminalScript = `
 tell application "Terminal"
     activate
@@ -363,12 +399,7 @@ tell application "Terminal"
 end tell`;
     return new Promise((resolve) => {
         exec(`osascript -e '${terminalScript}'`, (error) => {
-            if (error) {
-                console.error(chalk.red('Failed to open Terminal'));
-                resolve(false);
-            } else {
-                resolve(true);
-            }
+            resolve(!error);
         });
     });
 }
@@ -379,16 +410,8 @@ end tell`;
 async function interactiveMode(workspaceRoot: string) {
     const result = await runInteraction(workspaceRoot);
     if (result?.cdPath) {
-        if (process.env.CSQ_CD_FILE) {
-            // Shell function이 설정되어 있으면 경로만 출력 (shell function이 cd 처리)
-            console.log(result.cdPath);
-        } else {
-            // Shell function이 없으면 안내 메시지 출력
-            console.log(chalk.dim('\nRun this to switch:'));
-            console.log(chalk.cyan(`  cd "${result.cdPath}"`));
-            console.log(chalk.dim('\nTip: Add to ~/.zshrc for auto-cd:'));
-            console.log(chalk.dim('  eval "$(csq --init)"'));
-        }
+        // AppleScript로 현재 터미널에 cd 명령어 전송
+        await cdInCurrentTerminal(result.cdPath);
     }
 }
 

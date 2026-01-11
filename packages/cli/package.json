@@ -1,6 +1,6 @@
 {
   "name": "code-squad-cli",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "type": "module",
   "bin": {
     "csq": "./dist/index.js"
