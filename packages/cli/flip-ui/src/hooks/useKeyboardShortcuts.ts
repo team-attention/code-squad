@@ -4,12 +4,22 @@ interface UseKeyboardShortcutsOptions {
   onFuzzyFinderToggle: () => void
   onCancel: () => void
   onSubmit: () => void
+  onToggleLeftPanel: () => void
+  onToggleRightPanel: () => void
+  onToggleAllPanels: () => void
+  onToggleGitFilter: () => void
+  onCycleDiffMode: () => void
 }
 
 export function useKeyboardShortcuts({
   onFuzzyFinderToggle,
   onCancel,
   onSubmit,
+  onToggleLeftPanel,
+  onToggleRightPanel,
+  onToggleAllPanels,
+  onToggleGitFilter,
+  onCycleDiffMode,
 }: UseKeyboardShortcutsOptions) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -40,6 +50,41 @@ export function useKeyboardShortcuts({
         return
       }
 
+      // Cmd+B - Toggle left panel (file tree)
+      if (e.metaKey && !e.shiftKey && e.key === 'b') {
+        e.preventDefault()
+        onToggleLeftPanel()
+        return
+      }
+
+      // Cmd+Shift+B - Toggle right panel (staging)
+      if (e.metaKey && e.shiftKey && e.key === 'B') {
+        e.preventDefault()
+        onToggleRightPanel()
+        return
+      }
+
+      // Cmd+\ - Toggle all panels (zen mode)
+      if (e.metaKey && e.key === '\\') {
+        e.preventDefault()
+        onToggleAllPanels()
+        return
+      }
+
+      // Cmd+G - Toggle git filter
+      if (e.metaKey && e.key === 'g') {
+        e.preventDefault()
+        onToggleGitFilter()
+        return
+      }
+
+      // Cmd+D - Cycle diff mode
+      if (e.metaKey && e.key === 'd') {
+        e.preventDefault()
+        onCycleDiffMode()
+        return
+      }
+
       // Escape - Close fuzzy finder or cancel selection
       if (e.key === 'Escape') {
         // This is handled by individual components
@@ -48,5 +93,14 @@ export function useKeyboardShortcuts({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onFuzzyFinderToggle, onCancel, onSubmit])
+  }, [
+    onFuzzyFinderToggle,
+    onCancel,
+    onSubmit,
+    onToggleLeftPanel,
+    onToggleRightPanel,
+    onToggleAllPanels,
+    onToggleGitFilter,
+    onCycleDiffMode,
+  ])
 }
