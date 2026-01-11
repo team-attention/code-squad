@@ -9,6 +9,9 @@ import { gitRouter } from '../routes/git.js';
 import { submitRouter } from '../routes/submit.js';
 import { cancelRouter } from '../routes/cancel.js';
 import { createStaticRouter } from '../routes/static.js';
+import { createEventsRouter } from '../routes/events.js';
+import { FileWatcher } from '../watcher/FileWatcher.js';
+import { SSEManager } from '../events/SSEManager.js';
 
 export interface AppState {
     cwd: string;
@@ -40,12 +43,33 @@ export class Server {
             // Store state in app locals
             app.locals.state = state;
 
+            // Initialize SSE manager and file watcher
+            const sseManager = new SSEManager();
+            const fileWatcher = new FileWatcher({ cwd: this.cwd });
+
+            // Set up watcher event handlers
+            fileWatcher.onFilesChanged(() => {
+                sseManager.broadcast({ type: 'files-changed' });
+            });
+
+            fileWatcher.onFileChanged((path) => {
+                sseManager.broadcast({ type: 'file-changed', path });
+            });
+
+            fileWatcher.onGitChanged(() => {
+                sseManager.broadcast({ type: 'git-changed' });
+            });
+
+            // Start watching
+            fileWatcher.start();
+
             // API routes
             app.use('/api/files', filesRouter);
             app.use('/api/file', fileRouter);
             app.use('/api/git', gitRouter);
             app.use('/api/submit', submitRouter);
             app.use('/api/cancel', cancelRouter);
+            app.use('/api/events', createEventsRouter(sseManager));
 
             // Static files (fallback to web-ui dist)
             app.use(createStaticRouter());
@@ -54,6 +78,9 @@ export class Server {
 
             // Set up the shutdown mechanism
             state.resolve = (output: string | null) => {
+                // Cleanup watcher and SSE connections
+                fileWatcher.stop();
+                sseManager.closeAll();
                 server.close();
                 resolve(output);
             };
