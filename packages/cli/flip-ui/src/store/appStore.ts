@@ -10,9 +10,10 @@ interface AppState {
   // File tree
   fileTree: FileNode[]
   flatFiles: string[]
+  filteredDirs: string[]
   expandedDirs: Set<string>
   setFileTree: (tree: FileNode[]) => void
-  setFlatFiles: (files: string[]) => void
+  setFlatFiles: (files: string[], filteredDirs: string[]) => void
   toggleDir: (path: string) => void
 
   // Current file
@@ -37,9 +38,10 @@ export const useAppStore = create<AppState>((set) => ({
   // File tree
   fileTree: [],
   flatFiles: [],
+  filteredDirs: [],
   expandedDirs: new Set<string>(),
   setFileTree: (tree) => set({ fileTree: tree }),
-  setFlatFiles: (files) => set({ flatFiles: files }),
+  setFlatFiles: (files, filteredDirs) => set({ flatFiles: files, filteredDirs }),
   toggleDir: (path) =>
     set((state) => {
       const newExpanded = new Set(state.expandedDirs)

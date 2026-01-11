@@ -81,6 +81,7 @@ function FileTree() {
   const renderNode = (node: FileNode, depth: number = 0) => {
     const isDir = node.type === 'directory'
     const isExpanded = expandedDirs.has(node.path)
+    const isFiltered = node.filtered === true
     const gitStat = getGitStatusForPath(node.path)
 
     return (
@@ -88,9 +89,11 @@ function FileTree() {
         <div
           className={`tree-item ${isDir ? 'tree-item-dir' : 'tree-item-file'} ${
             gitStat ? `git-${gitStat}` : ''
-          }`}
+          } ${isFiltered ? 'tree-item-filtered' : ''}`}
           style={{ paddingLeft: `${depth * 16 + 8}px` }}
+          title={isFiltered ? 'Not loaded for performance' : undefined}
           onClick={() => {
+            if (isFiltered) return
             if (isDir) {
               toggleDir(node.path)
             } else {

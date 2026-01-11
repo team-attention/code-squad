@@ -334,6 +334,16 @@ body {
   background-color: rgba(63, 185, 80, 0.15);
 }
 
+/* Filtered items (not loaded for performance) */
+.tree-item-filtered {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.tree-item-filtered:hover {
+  background-color: inherit;
+}
+
 /* Code Viewer */
 .code-viewer {
   display: flex;
@@ -619,6 +629,14 @@ body {
   padding: var(--space-4);
   color: var(--text-muted);
   text-align: center;
+}
+
+.fuzzy-finder-hint {
+  padding: var(--space-2) var(--space-4);
+  font-size: 11px;
+  color: var(--text-muted);
+  background-color: var(--bg-tertiary);
+  border-top: 1px solid var(--border-subtle);
 }
 
 /* Buttons */

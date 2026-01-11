@@ -50,7 +50,7 @@ function App() {
           api.getGitStatus(),
         ])
         setFileTree(filesRes.tree)
-        setFlatFiles(flatRes.files)
+        setFlatFiles(flatRes.files, flatRes.filteredDirs)
         setGitStatus(gitRes)
       } catch (err) {
         console.error('Failed to load data:', err)

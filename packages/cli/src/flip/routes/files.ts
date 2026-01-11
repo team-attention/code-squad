@@ -8,6 +8,7 @@ export interface FileNode {
     path: string;
     name: string;
     type: 'file' | 'directory';
+    filtered?: boolean;
     children?: FileNode[];
 }
 
@@ -18,19 +19,28 @@ export interface FilesResponse {
 
 export interface FlatFilesResponse {
     files: string[];
+    filteredDirs: string[];
 }
 
-const router: IRouter = Router();
-
-// Default ignore patterns (similar to .gitignore behavior)
-const DEFAULT_IGNORES = [
+// Patterns to filter for performance (O(1) lookup with Set)
+// These are system directories that users don't directly edit
+const FILTERED_PATTERNS = new Set([
+    // Package managers
     'node_modules',
+    'vendor',
+    '.pnpm-store',
+    // VCS internal
     '.git',
     '.svn',
     '.hg',
+    // OS metadata
+    '.DS_Store',
+    'Thumbs.db',
+    // Build output
     'dist',
     'build',
     'out',
+    // Cache directories
     '.cache',
     '.next',
     '.nuxt',
@@ -38,47 +48,13 @@ const DEFAULT_IGNORES = [
     '__pycache__',
     '.pytest_cache',
     'target',
-    'Cargo.lock',
-    'package-lock.json',
-    'pnpm-lock.yaml',
-    'yarn.lock',
-    '.DS_Store',
-];
-
-// Dotfiles that should be visible in the file tree
-const VISIBLE_DOTFILES = new Set([
-    '.gitignore',
-    '.gitattributes',
-    '.env.example',
-    '.env.local.example',
-    '.eslintrc',
-    '.eslintrc.js',
-    '.eslintrc.cjs',
-    '.eslintrc.json',
-    '.eslintrc.yml',
-    '.prettierrc',
-    '.prettierrc.js',
-    '.prettierrc.cjs',
-    '.prettierrc.json',
-    '.prettierrc.yml',
-    '.editorconfig',
-    '.npmrc',
-    '.nvmrc',
-    '.node-version',
-    '.dockerignore',
-    '.browserslistrc',
-    '.babelrc',
-    '.babelrc.js',
-    '.babelrc.json',
 ]);
 
-function shouldIgnore(name: string): boolean {
-    if (name.startsWith('.')) {
-        // Allow specific dotfiles
-        return !VISIBLE_DOTFILES.has(name);
-    }
-    return DEFAULT_IGNORES.includes(name);
+function isFiltered(name: string): boolean {
+    return FILTERED_PATTERNS.has(name);
 }
+
+const router: IRouter = Router();
 
 function buildFileTree(rootPath: string, currentPath: string, maxDepth: number, depth: number = 0): FileNode[] {
     if (depth > maxDepth) return [];
@@ -94,18 +70,19 @@ function buildFileTree(rootPath: string, currentPath: string, maxDepth: number, 
     });
 
     for (const entry of entries) {
-        if (shouldIgnore(entry.name)) continue;
-
         const fullPath = path.join(currentPath, entry.name);
         const relativePath = path.relative(rootPath, fullPath);
+        const filtered = isFiltered(entry.name);
 
         const node: FileNode = {
             path: relativePath,
             name: entry.name,
             type: entry.isDirectory() ? 'directory' : 'file',
+            ...(filtered && { filtered: true }),
         };
 
-        if (entry.isDirectory()) {
+        // Don't load children for filtered directories (performance)
+        if (entry.isDirectory() && !filtered) {
             node.children = buildFileTree(rootPath, fullPath, maxDepth, depth + 1);
         }
 
@@ -115,26 +92,42 @@ function buildFileTree(rootPath: string, currentPath: string, maxDepth: number, 
     return nodes;
 }
 
-function collectFlatFiles(rootPath: string, currentPath: string, maxDepth: number, depth: number = 0): string[] {
-    if (depth > maxDepth) return [];
+interface CollectResult {
+    files: string[];
+    filteredDirs: string[];
+}
+
+// Memory-efficient: pass result object through recursion to avoid intermediate arrays
+function collectFlatFiles(
+    rootPath: string,
+    currentPath: string,
+    maxDepth: number,
+    depth: number = 0,
+    result: CollectResult = { files: [], filteredDirs: [] }
+): CollectResult {
+    if (depth > maxDepth) return result;
 
     const entries = fs.readdirSync(currentPath, { withFileTypes: true });
-    const files: string[] = [];
 
     for (const entry of entries) {
-        if (shouldIgnore(entry.name)) continue;
-
         const fullPath = path.join(currentPath, entry.name);
         const relativePath = path.relative(rootPath, fullPath);
 
+        if (isFiltered(entry.name)) {
+            if (entry.isDirectory()) {
+                result.filteredDirs.push(relativePath);
+            }
+            continue; // Don't traverse filtered directories
+        }
+
         if (entry.isFile()) {
-            files.push(relativePath);
+            result.files.push(relativePath);
         } else if (entry.isDirectory()) {
-            files.push(...collectFlatFiles(rootPath, fullPath, maxDepth, depth + 1));
+            collectFlatFiles(rootPath, fullPath, maxDepth, depth + 1, result);
         }
     }
 
-    return files;
+    return result;
 }
 
 // GET /api/files - Get file tree structure
@@ -153,11 +146,13 @@ router.get('/', (req: Request, res: Response) => {
 // GET /api/files/flat - Get flat list of all files
 router.get('/flat', (req: Request, res: Response) => {
     const state = req.app.locals.state as AppState;
-    const files = collectFlatFiles(state.cwd, state.cwd, 10);
-    files.sort();
+    const result = collectFlatFiles(state.cwd, state.cwd, 10);
+    result.files.sort();
+    result.filteredDirs.sort();
 
     const response: FlatFilesResponse = {
-        files,
+        files: result.files,
+        filteredDirs: result.filteredDirs,
     };
 
     res.json(response);

@@ -2,6 +2,7 @@ export interface FileNode {
   path: string
   name: string
   type: 'file' | 'directory'
+  filtered?: boolean
   children?: FileNode[]
 }
 
@@ -12,6 +13,7 @@ export interface FilesResponse {
 
 export interface FlatFilesResponse {
   files: string[]
+  filteredDirs: string[]
 }
 
 export interface FileResponse {
