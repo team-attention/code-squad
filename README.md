@@ -139,6 +139,23 @@ Or download from [Open VSX](https://open-vsx.org/extension/JakePark/code-squad)
 | `codeSquad.includeFiles` | `[]` | Glob patterns for gitignored files to track |
 | `codeSquad.worktreeCopyPatterns` | `[]` | Files to copy when creating worktree (e.g., `.env*`, `config/**`) |
 
+### CLI Global Configuration
+
+Create `~/.code-squad/config.json` to configure per-project settings for CLI:
+
+```json
+{
+  "projects": {
+    "/path/to/project-a": {
+      "worktreeCopyPatterns": [".env*", "config/**"]
+    },
+    "/path/to/project-b": {
+      "worktreeCopyPatterns": [".env"]
+    }
+  }
+}
+```
+
 ---
 
 ## Requirements
