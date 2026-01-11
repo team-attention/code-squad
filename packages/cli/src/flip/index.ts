@@ -4,8 +4,8 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { execSync } from 'child_process';
-import { confirm, select } from '@inquirer/prompts';
-import clipboardy from 'clipboardy';
+import { confirm } from '@inquirer/prompts';
+import { copyToClipboard } from './output/clipboard.js';
 
 const DEFAULT_PORT = 51234;
 
@@ -250,7 +250,7 @@ osascript ${applescriptPath} > /dev/null 2>&1
     console.log('');
 
     // Copy path to clipboard
-    await clipboardy.write(shPath);
+    await copyToClipboard(shPath);
     console.log(`✓ Copied to clipboard: ${shPath}`);
     console.log('');
 

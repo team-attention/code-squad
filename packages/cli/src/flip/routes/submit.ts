@@ -47,18 +47,25 @@ router.post('/', async (req: Request, res: Response) => {
     // Format the output
     const formatted = formatComments(comments);
 
-    // Copy to clipboard
+    // Copy to clipboard and schedule paste only if copy succeeds
+    let clipboardSuccess = false;
     try {
         await copyToClipboard(formatted);
+        clipboardSuccess = true;
     } catch (e) {
         console.error('Failed to copy to clipboard:', e);
+        console.log('\n--- Output (copy manually) ---');
+        console.log(formatted);
+        console.log('--- End of output ---\n');
     }
 
-    // Schedule paste (will execute after server shuts down)
-    try {
-        await schedulePaste(body.session_id);
-    } catch (e) {
-        console.error('Failed to schedule paste:', e);
+    // Schedule paste only if clipboard copy succeeded
+    if (clipboardSuccess) {
+        try {
+            await schedulePaste(body.session_id);
+        } catch (e) {
+            console.error('Failed to schedule paste:', e);
+        }
     }
 
     // Send response before shutdown

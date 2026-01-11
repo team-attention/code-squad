@@ -1,17 +1,30 @@
 import { useMemo } from 'react'
-import { FileCode, Search } from 'lucide-react'
+import { FileCode, Search, Code, Eye } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import { useUIStore } from '../store/uiStore'
+import { useStagingStore, type StagedItem } from '../store/stagingStore'
 import { useShiki, type HighlightedLine, type TokenSpan } from '../hooks/useShiki'
 import { useDiff } from '../hooks/useDiff'
 import { useLineSelection } from '../hooks/useLineSelection'
+import MarkdownPreview from './MarkdownPreview'
+import InlineCommentForm from './InlineCommentForm'
+import InlineStagedComment from './InlineStagedComment'
 import type { DiffLine } from '../api'
+
+// Comment range info for gutter indicator
+interface CommentRange {
+  id: string
+  startLine: number
+  endLine: number
+  colorIndex: number
+}
 
 interface CodeLineProps {
   lineNumber: number
   tokens: TokenSpan[]
   selected: boolean
   diffType?: 'add' | 'delete' | 'context'
+  commentRanges?: CommentRange[]
   handlers: {
     onMouseDown: (lineNum: number) => void
     onMouseMove: (lineNum: number) => void
@@ -19,7 +32,7 @@ interface CodeLineProps {
   }
 }
 
-function CodeLine({ lineNumber, tokens, selected, diffType, handlers }: CodeLineProps) {
+function CodeLine({ lineNumber, tokens, selected, diffType, commentRanges = [], handlers }: CodeLineProps) {
   const diffClass =
     diffType === 'add'
       ? 'code-line-added'
@@ -27,13 +40,39 @@ function CodeLine({ lineNumber, tokens, selected, diffType, handlers }: CodeLine
       ? 'code-line-deleted'
       : ''
 
+  // Determine gutter indicator style for each comment range
+  const gutterIndicators = commentRanges.map((range) => {
+    let rangeType: 'single' | 'start' | 'middle' | 'end' = 'single'
+    if (range.startLine === range.endLine) {
+      rangeType = 'single'
+    } else if (lineNumber === range.startLine) {
+      rangeType = 'start'
+    } else if (lineNumber === range.endLine) {
+      rangeType = 'end'
+    } else {
+      rangeType = 'middle'
+    }
+    return { ...range, rangeType }
+  })
+
+  const hasComment = gutterIndicators.length > 0
+
   return (
     <div
-      className={`code-line ${selected ? 'code-line-selected' : ''} ${diffClass}`}
+      className={`code-line ${selected ? 'code-line-selected' : ''} ${diffClass} ${hasComment ? 'has-comment' : ''}`}
       onMouseDown={() => handlers.onMouseDown(lineNumber)}
       onMouseMove={() => handlers.onMouseMove(lineNumber)}
       onMouseUp={handlers.onMouseUp}
     >
+      <span className={`line-gutter ${hasComment ? 'has-comment' : ''}`}>
+        {gutterIndicators.map((indicator, idx) => (
+          <span
+            key={indicator.id}
+            className={`gutter-bar gutter-bar-${indicator.rangeType} color-${indicator.colorIndex % 6}`}
+            style={{ left: `${2 + idx * 4}px` }}
+          />
+        ))}
+      </span>
       <span className="line-number">{lineNumber}</span>
       <span className="code-content">
         {tokens.map((token, idx) => (
@@ -204,8 +243,63 @@ function SideBySideDiffView({
 }
 
 function CodeViewer() {
-  const { currentFile, selection, setSelection } = useAppStore()
-  const { diffViewMode } = useUIStore()
+  const { currentFile, selection, setSelection, clearSelection } = useAppStore()
+  const { diffViewMode, markdownPreviewEnabled, toggleMarkdownPreview } = useUIStore()
+  const { items: stagedItems, addItem, removeItem } = useStagingStore()
+
+  const isMarkdownFile = currentFile?.language === 'markdown' || currentFile?.path?.endsWith('.md')
+
+  // Get comments for current file
+  const currentFileComments = useMemo(() => {
+    if (!currentFile) return []
+    return stagedItems
+      .filter((item) => item.filePath === currentFile.path)
+      .map((item, idx) => ({ ...item, colorIndex: idx }))
+  }, [stagedItems, currentFile])
+
+  // Get comments grouped by end line (for displaying inline comments)
+  const commentsByEndLine = useMemo(() => {
+    const map = new Map<number, StagedItem[]>()
+    for (const item of currentFileComments) {
+      const existing = map.get(item.endLine) || []
+      existing.push(item)
+      map.set(item.endLine, existing)
+    }
+    return map
+  }, [currentFileComments])
+
+  // Get comment ranges for each line (for gutter indicators)
+  const commentRangesByLine = useMemo(() => {
+    const map = new Map<number, CommentRange[]>()
+    for (const item of currentFileComments) {
+      for (let line = item.startLine; line <= item.endLine; line++) {
+        const existing = map.get(line) || []
+        existing.push({
+          id: item.id,
+          startLine: item.startLine,
+          endLine: item.endLine,
+          colorIndex: item.colorIndex,
+        })
+        map.set(line, existing)
+      }
+    }
+    return map
+  }, [currentFileComments])
+
+  const handleCommentSubmit = (comment: string) => {
+    if (!currentFile || !selection) return
+    addItem({
+      filePath: currentFile.path,
+      startLine: selection.startLine,
+      endLine: selection.endLine,
+      comment,
+    })
+    clearSelection()
+  }
+
+  const handleCommentCancel = () => {
+    clearSelection()
+  }
 
   const { handlers } = useLineSelection((sel) => {
     setSelection(sel)
@@ -324,25 +418,105 @@ function CodeViewer() {
     return lineNum >= selection.startLine && lineNum <= selection.endLine
   }
 
+  // Markdown preview view
+  if (isMarkdownFile && markdownPreviewEnabled) {
+    return (
+      <div className="code-viewer">
+        <div className="code-viewer-header">
+          <span className="file-path">{currentFile.path}</span>
+          <div className="code-viewer-header-right">
+            <span className="file-language">{currentFile.language}</span>
+            <button
+              className="preview-toggle-btn active"
+              onClick={toggleMarkdownPreview}
+              aria-label="Toggle markdown preview"
+              aria-pressed="true"
+            >
+              <Code size={14} />
+              <span>Source</span>
+            </button>
+          </div>
+        </div>
+        <div className="code-viewer-content markdown-preview-container">
+          {loading ? (
+            <div className="code-viewer-loading">Loading...</div>
+          ) : (
+            <MarkdownPreview
+              content={currentFile.content}
+              selection={selection}
+              comments={currentFileComments}
+              onSelect={(sel) => setSelection(sel)}
+              onCommentSubmit={handleCommentSubmit}
+              onCommentCancel={handleCommentCancel}
+              onCommentRemove={removeItem}
+            />
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="code-viewer">
       <div className="code-viewer-header">
         <span className="file-path">{currentFile.path}</span>
-        <span className="file-language">{currentFile.language}</span>
+        <div className="code-viewer-header-right">
+          <span className="file-language">{currentFile.language}</span>
+          {isMarkdownFile && (
+            <button
+              className="preview-toggle-btn"
+              onClick={toggleMarkdownPreview}
+              aria-label="Toggle markdown preview"
+              aria-pressed="false"
+            >
+              <Eye size={14} />
+              <span>Preview</span>
+            </button>
+          )}
+        </div>
       </div>
       <div className="code-viewer-content">
         {loading ? (
           <div className="code-viewer-loading">Loading...</div>
         ) : (
-          lines.map((line) => (
-            <CodeLine
-              key={line.lineNumber}
-              lineNumber={line.lineNumber}
-              tokens={line.tokens}
-              selected={isLineSelected(line.lineNumber)}
-              handlers={handlers}
-            />
-          ))
+          lines.map((line) => {
+            const lineComments = commentsByEndLine.get(line.lineNumber) || []
+            const lineRanges = commentRangesByLine.get(line.lineNumber) || []
+            const showCommentForm = selection && selection.endLine === line.lineNumber
+
+            return (
+              <div key={line.lineNumber}>
+                <CodeLine
+                  lineNumber={line.lineNumber}
+                  tokens={line.tokens}
+                  selected={isLineSelected(line.lineNumber)}
+                  commentRanges={lineRanges}
+                  handlers={handlers}
+                />
+                {/* Show existing comments for this line */}
+                {lineComments.length > 0 && (
+                  <div className="inline-comments-container">
+                    {lineComments.map((item) => (
+                      <InlineStagedComment
+                        key={item.id}
+                        item={item}
+                        onRemove={removeItem}
+                      />
+                    ))}
+                  </div>
+                )}
+                {/* Show comment form at selection end */}
+                {showCommentForm && (
+                  <InlineCommentForm
+                    startLine={selection.startLine}
+                    endLine={selection.endLine}
+                    onSubmit={handleCommentSubmit}
+                    onCancel={handleCommentCancel}
+                  />
+                )}
+              </div>
+            )
+          })
         )}
       </div>
     </div>

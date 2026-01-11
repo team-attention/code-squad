@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import FileTree from './components/FileTree'
 import CodeViewer from './components/CodeViewer'
 import StagingList from './components/StagingList'
-import CommentInput from './components/CommentInput'
 import FuzzyFinder from './components/FuzzyFinder'
 import Toolbar from './components/Toolbar'
 import { useAppStore } from './store/appStore'
@@ -14,18 +13,15 @@ import { api } from './api'
 
 function App() {
   const {
-    currentFile,
-    selection,
     setFileTree,
     setFlatFiles,
     setGitStatus,
     setCurrentFile,
     showFuzzyFinder,
     setShowFuzzyFinder,
-    clearSelection,
   } = useAppStore()
 
-  const { items: stagedItems, addItem } = useStagingStore()
+  const { items: stagedItems } = useStagingStore()
 
   const {
     leftPanelVisible,
@@ -103,19 +99,6 @@ function App() {
     onCycleDiffMode: cycleDiffViewMode,
   })
 
-  const handleCommentSubmit = (comment: string) => {
-    if (!currentFile || !selection) return
-
-    addItem({
-      filePath: currentFile.path,
-      startLine: selection.startLine,
-      endLine: selection.endLine,
-      comment,
-    })
-
-    clearSelection()
-  }
-
   const handleSubmit = async () => {
     if (stagedItems.length === 0) return
     setIsSubmitting(true)
@@ -152,12 +135,9 @@ function App() {
         </aside>
       </div>
       <footer className="footer">
-        <CommentInput
-          selection={selection}
-          currentFilePath={currentFile?.path ?? null}
-          onSubmit={handleCommentSubmit}
-          onCancel={clearSelection}
-        />
+        <span className="footer-hint">
+          Select lines in the code viewer to add a comment
+        </span>
         <div className="footer-actions">
           <button className="btn btn-secondary" onClick={handleCancel}>
             Cancel (q)
