@@ -17,6 +17,8 @@ import {
 } from './ui/prompts.js';
 import type { WorktreeInfo } from '@code-squad/core';
 import { runFlip } from './flip/index.js';
+import { loadConfig, getWorktreeCopyPatterns } from './config.js';
+import { copyFilesWithPatterns } from './fileUtils.js';
 
 // Ctrl+C 시 깔끔하게 종료
 process.on('SIGINT', () => {
@@ -270,12 +272,45 @@ async function createWorktree(workspaceRoot: string, name?: string) {
     try {
         await gitAdapter.createWorktree(worktreePath, worktreeName, workspaceRoot);
         console.log(chalk.green(`✓ Created worktree: ${worktreeName}`));
+
+        // 설정 파일에서 복사할 패턴 읽어서 파일 복사
+        await copyWorktreeFiles(workspaceRoot, worktreePath);
+
         await writeCdFile(worktreePath);
     } catch (error) {
         console.error(
             chalk.red(`Failed to create worktree: ${(error as Error).message}`)
         );
         process.exit(1);
+    }
+}
+
+/**
+ * 워크트리에 설정된 패턴의 파일 복사
+ * .code-squad.json의 worktreeCopyPatterns 사용
+ */
+async function copyWorktreeFiles(sourceRoot: string, destRoot: string): Promise<void> {
+    const config = await loadConfig(sourceRoot);
+    const patterns = getWorktreeCopyPatterns(config);
+
+    if (patterns.length === 0) {
+        return;
+    }
+
+    const { copied, failed } = await copyFilesWithPatterns(sourceRoot, destRoot, patterns);
+
+    if (copied.length > 0) {
+        console.log(chalk.green(`✓ Copied ${copied.length} file(s) to worktree`));
+        for (const file of copied) {
+            console.log(chalk.dim(`  - ${file}`));
+        }
+    }
+
+    if (failed.length > 0) {
+        console.log(chalk.yellow(`⚠ Failed to copy ${failed.length} file(s)`));
+        for (const file of failed) {
+            console.log(chalk.dim(`  - ${file}`));
+        }
     }
 }
 
@@ -471,6 +506,10 @@ async function runInteraction(workspaceRoot: string, _persistent = false): Promi
                         workspaceRoot
                     );
                     console.log(chalk.green(`✓ Created worktree: ${form.name}`));
+
+                    // 설정 파일에서 복사할 패턴 읽어서 파일 복사
+                    await copyWorktreeFiles(workspaceRoot, form.path);
+
                     targetPath = form.path;
                 } catch (error) {
                     console.error(

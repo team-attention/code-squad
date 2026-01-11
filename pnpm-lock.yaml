@@ -32,6 +32,9 @@ importers:
       express:
         specifier: ^4.18.2
         version: 4.22.1
+      fast-glob:
+        specifier: ^3.3.3
+        version: 3.3.3
       open:
         specifier: ^10.0.3
         version: 10.2.0
