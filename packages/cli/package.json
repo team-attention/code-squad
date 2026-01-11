@@ -1,6 +1,6 @@
 {
   "name": "code-squad-cli",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "type": "module",
   "bin": {
     "csq": "./dist/index.js"
@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "build": "tsc && npm run bundle && npm run build:flip-ui",
-    "bundle": "esbuild dist/index.js --bundle --platform=node --format=esm --outfile=dist/index.js --allow-overwrite --external:@inquirer/core --external:@inquirer/prompts --external:chalk --external:express --external:cors --external:clipboardy --external:open",
+    "bundle": "esbuild dist/index.js --bundle --platform=node --format=esm --outfile=dist/index.js --allow-overwrite --external:@inquirer/core --external:@inquirer/prompts --external:chalk --external:express --external:cors --external:clipboardy --external:open --external:fast-glob",
     "build:flip-ui": "cd flip-ui && pnpm build && mkdir -p ../dist/flip-ui && cp -r dist ../dist/flip-ui/",
     "build:watch": "tsc --watch",
     "dev": "tsx src/index.ts",

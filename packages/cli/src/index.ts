@@ -301,16 +301,10 @@ async function copyWorktreeFiles(sourceRoot: string, destRoot: string): Promise<
 
     if (copied.length > 0) {
         console.log(chalk.green(`✓ Copied ${copied.length} file(s) to worktree`));
-        for (const file of copied) {
-            console.log(chalk.dim(`  - ${file}`));
-        }
     }
 
     if (failed.length > 0) {
         console.log(chalk.yellow(`⚠ Failed to copy ${failed.length} file(s)`));
-        for (const file of failed) {
-            console.log(chalk.dim(`  - ${file}`));
-        }
     }
 }
 
@@ -385,8 +379,16 @@ end tell`;
 async function interactiveMode(workspaceRoot: string) {
     const result = await runInteraction(workspaceRoot);
     if (result?.cdPath) {
-        // Output path for shell wrapper to cd (no new terminal)
-        console.log(result.cdPath);
+        if (process.env.CSQ_CD_FILE) {
+            // Shell function이 설정되어 있으면 경로만 출력 (shell function이 cd 처리)
+            console.log(result.cdPath);
+        } else {
+            // Shell function이 없으면 안내 메시지 출력
+            console.log(chalk.dim('\nRun this to switch:'));
+            console.log(chalk.cyan(`  cd "${result.cdPath}"`));
+            console.log(chalk.dim('\nTip: Add to ~/.zshrc for auto-cd:'));
+            console.log(chalk.dim('  eval "$(csq --init)"'));
+        }
     }
 }
 
