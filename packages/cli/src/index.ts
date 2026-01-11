@@ -300,8 +300,8 @@ async function createWorktreeCommand(workspaceRoot: string, args: string[]) {
             // split pane으로 새 터미널 열기
             await openNewTerminal(worktreePath);
         } else {
-            // 셸 함수가 마지막 줄을 보고 cd 실행
-            console.log(worktreePath);
+            // AppleScript로 현재 터미널에 cd 명령어 전송
+            await cdInCurrentTerminal(worktreePath);
         }
     } catch (error) {
         console.error(
@@ -348,8 +348,8 @@ async function quitWorktreeCommand() {
         await gitAdapter.deleteBranch(context.branch, context.mainRoot, true);
 
         console.log(chalk.green(`✓ Deleted worktree and branch: ${context.branch}`));
-        // 셸 함수가 마지막 줄을 보고 cd 실행
-        console.log(context.mainRoot);
+        // AppleScript로 현재 터미널에 cd 명령어 전송 (메인 레포로 이동)
+        await cdInCurrentTerminal(context.mainRoot);
     } catch (error) {
         console.error(chalk.red(`Failed to quit: ${(error as Error).message}`));
         process.exit(1);
