@@ -15,7 +15,7 @@ import { SSEManager } from '../events/SSEManager.js';
 
 export interface AppState {
     cwd: string;
-    resolve: ((output: string | null) => void) | null;
+    resolve: ((output: string | null) => void | Promise<void>) | null;
 }
 
 export class Server {
@@ -77,11 +77,11 @@ export class Server {
             const server = http.createServer(app);
 
             // Set up the shutdown mechanism
-            state.resolve = (output: string | null) => {
+            state.resolve = async (output: string | null) => {
                 // Cleanup watcher and SSE connections
-                fileWatcher.stop();
+                await fileWatcher.stop();
                 sseManager.closeAll();
-                server.close();
+                await new Promise<void>(res => server.close(() => res()));
                 resolve(output);
             };
 

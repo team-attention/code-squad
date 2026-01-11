@@ -24,10 +24,9 @@ export function createEventsRouter(sseManager: SSEManager): IRouter {
             res.write(':heartbeat\n\n');
         }, 30000);
 
-        // Cleanup on close
+        // Cleanup on close (removeClient is handled by SSEManager)
         req.on('close', () => {
             clearInterval(heartbeat);
-            sseManager.removeClient(res);
         });
     });
 

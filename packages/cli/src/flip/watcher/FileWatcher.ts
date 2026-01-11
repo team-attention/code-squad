@@ -56,7 +56,7 @@ export class FileWatcher {
             .on('error', (error) => console.error('Watcher error:', error));
     }
 
-    stop(): void {
+    async stop(): Promise<void> {
         if (this.filesDebounceTimer) {
             clearTimeout(this.filesDebounceTimer);
         }
@@ -69,7 +69,7 @@ export class FileWatcher {
         this.fileDebounceTimers.clear();
 
         if (this.watcher) {
-            this.watcher.close();
+            await this.watcher.close();
             this.watcher = null;
         }
     }
