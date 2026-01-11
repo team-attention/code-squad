@@ -25,7 +25,7 @@ export function useRealtimeSync(): void {
               api.getFlatFiles(),
             ])
             setFileTree(filesRes.tree)
-            setFlatFiles(flatRes.files, flatRes.filteredDirs)
+            setFlatFiles(flatRes.files, flatRes.filteredDirs, flatRes.recentFile ?? null)
           } catch (err) {
             console.error('Failed to refresh files:', err)
           }

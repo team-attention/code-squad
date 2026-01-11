@@ -13,6 +13,9 @@ interface UIState {
   // Diff view mode
   diffViewMode: DiffViewMode
 
+  // Markdown preview
+  markdownPreviewEnabled: boolean
+
   // Actions
   setLeftPanelVisible: (visible: boolean) => void
   setRightPanelVisible: (visible: boolean) => void
@@ -25,6 +28,9 @@ interface UIState {
 
   setDiffViewMode: (mode: DiffViewMode) => void
   cycleDiffViewMode: () => void
+
+  setMarkdownPreviewEnabled: (enabled: boolean) => void
+  toggleMarkdownPreview: () => void
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -37,6 +43,9 @@ export const useUIStore = create<UIState>((set) => ({
 
   // Diff view mode - default to no diff
   diffViewMode: 'none',
+
+  // Markdown preview - default to disabled
+  markdownPreviewEnabled: false,
 
   // Panel actions
   setLeftPanelVisible: (visible) => set({ leftPanelVisible: visible }),
@@ -72,4 +81,9 @@ export const useUIStore = create<UIState>((set) => ({
       const nextIndex = (currentIndex + 1) % modes.length
       return { diffViewMode: modes[nextIndex] }
     }),
+
+  // Markdown preview actions
+  setMarkdownPreviewEnabled: (enabled) => set({ markdownPreviewEnabled: enabled }),
+  toggleMarkdownPreview: () =>
+    set((state) => ({ markdownPreviewEnabled: !state.markdownPreviewEnabled })),
 }))

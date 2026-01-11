@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -75,9 +75,18 @@ async function pasteToOriginalSession(sessionId: string): Promise<void> {
     }
 
     try {
-        execSync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, {
-            stdio: 'pipe',
+        // Write script to temp file and execute via detached process
+        const tmpScript = path.join(os.tmpdir(), `flip-paste-${Date.now()}.scpt`);
+        fs.writeFileSync(tmpScript, script);
+        const child = spawn('osascript', [tmpScript], {
+            detached: true,
+            stdio: 'ignore',
         });
+        child.unref();
+        // Schedule cleanup
+        setTimeout(() => {
+            try { fs.unlinkSync(tmpScript); } catch {}
+        }, 5000);
     } catch (e) {
         console.error('Failed to paste to iTerm:', e);
     }

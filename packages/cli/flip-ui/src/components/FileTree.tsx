@@ -1,8 +1,99 @@
 import { useCallback, useMemo } from 'react'
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen, GitBranch } from 'lucide-react'
+import {
+  ChevronRight,
+  ChevronDown,
+  File,
+  FileCode,
+  FileJson,
+  FileText,
+  FileType,
+  Folder,
+  FolderOpen,
+  GitBranch,
+  Image,
+  Settings,
+} from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import { useUIStore } from '../store/uiStore'
 import { api, type FileNode } from '../api'
+
+// Get file icon based on file extension
+function getFileIcon(filename: string) {
+  const ext = filename.split('.').pop()?.toLowerCase()
+
+  switch (ext) {
+    // Code files
+    case 'ts':
+    case 'tsx':
+      return <FileCode size={14} style={{ color: '#3178c6' }} />
+    case 'js':
+    case 'jsx':
+      return <FileCode size={14} style={{ color: '#f7df1e' }} />
+    case 'py':
+      return <FileCode size={14} style={{ color: '#3776ab' }} />
+    case 'go':
+      return <FileCode size={14} style={{ color: '#00add8' }} />
+    case 'rs':
+      return <FileCode size={14} style={{ color: '#dea584' }} />
+    case 'java':
+      return <FileCode size={14} style={{ color: '#b07219' }} />
+    case 'rb':
+      return <FileCode size={14} style={{ color: '#cc342d' }} />
+    case 'php':
+      return <FileCode size={14} style={{ color: '#4f5d95' }} />
+    case 'css':
+    case 'scss':
+    case 'sass':
+    case 'less':
+      return <FileCode size={14} style={{ color: '#563d7c' }} />
+    case 'html':
+    case 'htm':
+      return <FileCode size={14} style={{ color: '#e34c26' }} />
+    case 'vue':
+      return <FileCode size={14} style={{ color: '#41b883' }} />
+    case 'svelte':
+      return <FileCode size={14} style={{ color: '#ff3e00' }} />
+
+    // Data files
+    case 'json':
+      return <FileJson size={14} style={{ color: '#cbcb41' }} />
+    case 'yaml':
+    case 'yml':
+      return <FileType size={14} style={{ color: '#cb171e' }} />
+    case 'xml':
+      return <FileType size={14} style={{ color: '#0060ac' }} />
+    case 'toml':
+      return <FileType size={14} style={{ color: '#9c4221' }} />
+
+    // Document files
+    case 'md':
+    case 'mdx':
+      return <FileText size={14} style={{ color: '#519aba' }} />
+    case 'txt':
+      return <FileText size={14} />
+
+    // Image files
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'gif':
+    case 'svg':
+    case 'webp':
+    case 'ico':
+      return <Image size={14} style={{ color: '#a074c4' }} />
+
+    // Config files
+    case 'env':
+    case 'gitignore':
+    case 'eslintrc':
+    case 'prettierrc':
+      return <Settings size={14} style={{ color: '#6e7681' }} />
+
+    // Default
+    default:
+      return <File size={14} />
+  }
+}
 
 // Filter tree to only include paths with git changes
 function filterTreeToChangedFiles(
@@ -105,7 +196,7 @@ function FileTree() {
             {isDir ? (
               isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
             ) : (
-              <File size={14} />
+              getFileIcon(node.name)
             )}
           </span>
           {isDir && (
