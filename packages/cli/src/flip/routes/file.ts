@@ -31,7 +31,7 @@ const extensionMap: Record<string, string> = {
     cpp: 'cpp',
     cc: 'cpp',
     cxx: 'cpp',
-    h: 'c',
+    h: 'cpp',
     hpp: 'cpp',
     hxx: 'cpp',
 
@@ -134,7 +134,7 @@ const filenameMap: Record<string, string> = {
     '.bash_profile': 'bash',
     '.profile': 'bash',
     'CMakeLists.txt': 'cmake',
-    'CODEOWNERS': 'codeowners',
+    'CODEOWNERS': 'gitignore',
 };
 
 function detectLanguage(filePath: string): string {

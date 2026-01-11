@@ -252,7 +252,7 @@ function CodeViewer() {
         <FileCode size={48} className="empty-state-icon" />
         <p>Select a file to view its contents</p>
         <p className="hint">
-          <Search size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+          <Search size={12} />
           Use Cmd+P or / to search for files
         </p>
       </div>
