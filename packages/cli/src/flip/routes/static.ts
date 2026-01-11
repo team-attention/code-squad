@@ -12,10 +12,15 @@ export function createStaticRouter(): IRouter {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
 
-    // Path to the built web-ui
-    // In development (tsx): __dirname is src/flip/routes, go up 3 levels to packages/cli
-    // In production (bundled): __dirname is dist/flip/routes, go up 3 levels to packages/cli
-    const distPath = path.resolve(__dirname, '../../../flip-ui/dist');
+    // First, check for the bundled path. This is more robust than checking the filename.
+    // - Bundled: dist/flip-ui/dist
+    let distPath = path.resolve(__dirname, 'flip-ui/dist');
+
+    // If the bundled path doesn't exist, fall back to the unbundled (development) path.
+    // - Unbundled: packages/cli/flip-ui/dist
+    if (!fs.existsSync(distPath)) {
+        distPath = path.resolve(__dirname, '../../../flip-ui/dist');
+    }
 
     // Check if dist exists (for development vs production)
     if (fs.existsSync(distPath)) {
