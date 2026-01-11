@@ -1,7 +1,9 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useShiki } from '../hooks/useShiki'
+import InlineCommentForm from './InlineCommentForm'
+import InlineStagedComment from './InlineStagedComment'
 import type { StagedItem } from '../store/stagingStore'
 
 // Comment range for gutter indicators
@@ -64,97 +66,6 @@ function CodeBlock({ className, children }: CodeBlockProps) {
           </div>
         ))}
       </pre>
-    </div>
-  )
-}
-
-// Inline comment form for preview mode
-interface InlineCommentFormProps {
-  startLine: number
-  endLine: number
-  onSubmit: (comment: string) => void
-  onCancel: () => void
-}
-
-function InlineCommentForm({ startLine, endLine, onSubmit, onCancel }: InlineCommentFormProps) {
-  const [comment, setComment] = useState('')
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => {
-    textareaRef.current?.focus()
-  }, [])
-
-  const handleSubmit = () => {
-    if (!comment.trim()) return
-    onSubmit(comment.trim())
-    setComment('')
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      onCancel()
-    } else if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
-      e.preventDefault()
-      handleSubmit()
-    }
-  }
-
-  const lineDisplay = startLine === endLine ? `line ${startLine}` : `lines ${startLine}-${endLine}`
-
-  return (
-    <div className="inline-comment-form preview-comment-form">
-      <div className="inline-comment-form-header">Comment on {lineDisplay}</div>
-      <textarea
-        ref={textareaRef}
-        className="inline-comment-textarea"
-        placeholder="Leave a comment..."
-        value={comment}
-        onChange={(e) => setComment(e.target.value)}
-        onKeyDown={handleKeyDown}
-      />
-      <div className="inline-comment-form-actions">
-        <button type="button" className="btn btn-secondary" onClick={onCancel}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={handleSubmit}
-          disabled={!comment.trim()}
-        >
-          Add Comment
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// Inline staged comment display for preview mode
-interface InlineStagedCommentProps {
-  item: StagedItem & { colorIndex: number }
-  onRemove: (id: string) => void
-}
-
-function InlineStagedComment({ item, onRemove }: InlineStagedCommentProps) {
-  const lineDisplay =
-    item.startLine === item.endLine
-      ? `Lines ${item.startLine}`
-      : `Lines ${item.startLine}-${item.endLine}`
-
-  return (
-    <div className={`inline-staged-comment preview-staged-comment color-${item.colorIndex % 6}`}>
-      <div className="inline-staged-comment-header">
-        <span className="inline-staged-comment-location">{lineDisplay}</span>
-        <button
-          className="inline-staged-comment-remove"
-          onClick={() => onRemove(item.id)}
-          title="Remove comment"
-        >
-          ✕
-        </button>
-      </div>
-      <div className="inline-staged-comment-body">{item.comment}</div>
     </div>
   )
 }
@@ -555,6 +466,7 @@ function MarkdownPreview({
                     key={item.id}
                     item={item}
                     onRemove={onCommentRemove}
+                    className="preview-staged-comment"
                   />
                 ))}
               </div>
@@ -567,6 +479,7 @@ function MarkdownPreview({
                 endLine={selection.endLine}
                 onSubmit={onCommentSubmit}
                 onCancel={onCommentCancel}
+                className="preview-comment-form"
               />
             )}
           </div>

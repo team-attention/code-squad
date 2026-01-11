@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect } from 'react'
+import { useMemo } from 'react'
 import { FileCode, Search, Code, Eye } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import { useUIStore } from '../store/uiStore'
@@ -7,6 +7,8 @@ import { useShiki, type HighlightedLine, type TokenSpan } from '../hooks/useShik
 import { useDiff } from '../hooks/useDiff'
 import { useLineSelection } from '../hooks/useLineSelection'
 import MarkdownPreview from './MarkdownPreview'
+import InlineCommentForm from './InlineCommentForm'
+import InlineStagedComment from './InlineStagedComment'
 import type { DiffLine } from '../api'
 
 // Comment range info for gutter indicator
@@ -86,97 +88,6 @@ function CodeLine({ lineNumber, tokens, selected, diffType, commentRanges = [], 
           </span>
         ))}
       </span>
-    </div>
-  )
-}
-
-// Inline comment form component
-interface InlineCommentFormProps {
-  startLine: number
-  endLine: number
-  onSubmit: (comment: string) => void
-  onCancel: () => void
-}
-
-function InlineCommentForm({ startLine, endLine, onSubmit, onCancel }: InlineCommentFormProps) {
-  const [comment, setComment] = useState('')
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => {
-    textareaRef.current?.focus()
-  }, [])
-
-  const handleSubmit = () => {
-    if (!comment.trim()) return
-    onSubmit(comment.trim())
-    setComment('')
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      onCancel()
-    } else if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
-      e.preventDefault()
-      handleSubmit()
-    }
-  }
-
-  const lineDisplay = startLine === endLine ? `line ${startLine}` : `lines ${startLine}-${endLine}`
-
-  return (
-    <div className="inline-comment-form">
-      <div className="inline-comment-form-header">Comment on {lineDisplay}</div>
-      <textarea
-        ref={textareaRef}
-        className="inline-comment-textarea"
-        placeholder="Leave a comment..."
-        value={comment}
-        onChange={(e) => setComment(e.target.value)}
-        onKeyDown={handleKeyDown}
-      />
-      <div className="inline-comment-form-actions">
-        <button type="button" className="btn btn-secondary" onClick={onCancel}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={handleSubmit}
-          disabled={!comment.trim()}
-        >
-          Add Comment
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// Inline staged comment display
-interface InlineStagedCommentProps {
-  item: StagedItem
-  onRemove: (id: string) => void
-}
-
-function InlineStagedComment({ item, onRemove }: InlineStagedCommentProps) {
-  const lineDisplay =
-    item.startLine === item.endLine
-      ? `Lines ${item.startLine}`
-      : `Lines ${item.startLine}-${item.endLine}`
-
-  return (
-    <div className="inline-staged-comment">
-      <div className="inline-staged-comment-header">
-        <span className="inline-staged-comment-location">{lineDisplay}</span>
-        <button
-          className="inline-staged-comment-remove"
-          onClick={() => onRemove(item.id)}
-          title="Remove comment"
-        >
-          ✕
-        </button>
-      </div>
-      <div className="inline-staged-comment-body">{item.comment}</div>
     </div>
   )
 }

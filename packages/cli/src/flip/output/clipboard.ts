@@ -33,11 +33,17 @@ export async function copyToClipboard(text: string): Promise<void> {
             });
             child.unref();
         } catch {
-            const child = spawn('sh', ['-c', `cat "${tmpFile}" | xsel --clipboard --input && rm "${tmpFile}"`], {
-                detached: true,
-                stdio: 'ignore',
-            });
-            child.unref();
+            try {
+                const child = spawn('sh', ['-c', `cat "${tmpFile}" | xsel --clipboard --input && rm "${tmpFile}"`], {
+                    detached: true,
+                    stdio: 'ignore',
+                });
+                child.unref();
+            } catch (e) {
+                // Final fallback if both xclip and xsel fail
+                console.log(`Output saved to: ${tmpFile}`);
+                throw e;
+            }
         }
     } else if (process.platform === 'win32') {
         const tmpFile = path.join(os.tmpdir(), `flip-clipboard-${Date.now()}.txt`);
