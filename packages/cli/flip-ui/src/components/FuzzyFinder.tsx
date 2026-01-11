@@ -4,7 +4,7 @@ import { useAppStore } from '../store/appStore'
 import { api } from '../api'
 
 function FuzzyFinder() {
-  const { flatFiles, setCurrentFile, setShowFuzzyFinder } = useAppStore()
+  const { flatFiles, filteredDirs, setCurrentFile, setShowFuzzyFinder } = useAppStore()
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -95,6 +95,13 @@ function FuzzyFinder() {
           ))}
           {results.length === 0 && (
             <div className="fuzzy-finder-empty">No files found</div>
+          )}
+          {filteredDirs.length > 0 && (
+            <div className="fuzzy-finder-hint">
+              {filteredDirs.length} folder{filteredDirs.length > 1 ? 's' : ''} excluded:{' '}
+              {filteredDirs.slice(0, 3).join(', ')}
+              {filteredDirs.length > 3 && ' ...'}
+            </div>
           )}
         </div>
       </div>

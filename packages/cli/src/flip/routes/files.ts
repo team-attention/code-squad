@@ -8,6 +8,7 @@ export interface FileNode {
     path: string;
     name: string;
     type: 'file' | 'directory';
+    filtered?: boolean;
     children?: FileNode[];
 }
 
@@ -18,6 +19,31 @@ export interface FilesResponse {
 
 export interface FlatFilesResponse {
     files: string[];
+    filteredDirs: string[];
+}
+
+// Patterns to filter for performance
+// These are system directories that users don't directly edit
+const FILTERED_PATTERNS = [
+    // Package managers
+    'node_modules',
+    'vendor',
+    '.pnpm-store',
+    // VCS internal
+    '.git',
+    '.svn',
+    '.hg',
+    // OS metadata
+    '.DS_Store',
+    'Thumbs.db',
+    // Build output
+    'dist',
+    'build',
+    'out',
+];
+
+function isFiltered(name: string): boolean {
+    return FILTERED_PATTERNS.includes(name);
 }
 
 const router: IRouter = Router();
@@ -38,14 +64,17 @@ function buildFileTree(rootPath: string, currentPath: string, maxDepth: number, 
     for (const entry of entries) {
         const fullPath = path.join(currentPath, entry.name);
         const relativePath = path.relative(rootPath, fullPath);
+        const filtered = isFiltered(entry.name);
 
         const node: FileNode = {
             path: relativePath,
             name: entry.name,
             type: entry.isDirectory() ? 'directory' : 'file',
+            ...(filtered && { filtered: true }),
         };
 
-        if (entry.isDirectory()) {
+        // Don't load children for filtered directories (performance)
+        if (entry.isDirectory() && !filtered) {
             node.children = buildFileTree(rootPath, fullPath, maxDepth, depth + 1);
         }
 
@@ -55,24 +84,39 @@ function buildFileTree(rootPath: string, currentPath: string, maxDepth: number, 
     return nodes;
 }
 
-function collectFlatFiles(rootPath: string, currentPath: string, maxDepth: number, depth: number = 0): string[] {
-    if (depth > maxDepth) return [];
+interface CollectResult {
+    files: string[];
+    filteredDirs: string[];
+}
+
+function collectFlatFiles(rootPath: string, currentPath: string, maxDepth: number, depth: number = 0): CollectResult {
+    if (depth > maxDepth) return { files: [], filteredDirs: [] };
 
     const entries = fs.readdirSync(currentPath, { withFileTypes: true });
     const files: string[] = [];
+    const filteredDirs: string[] = [];
 
     for (const entry of entries) {
         const fullPath = path.join(currentPath, entry.name);
         const relativePath = path.relative(rootPath, fullPath);
 
+        if (isFiltered(entry.name)) {
+            if (entry.isDirectory()) {
+                filteredDirs.push(relativePath);
+            }
+            continue; // Don't traverse filtered directories
+        }
+
         if (entry.isFile()) {
             files.push(relativePath);
         } else if (entry.isDirectory()) {
-            files.push(...collectFlatFiles(rootPath, fullPath, maxDepth, depth + 1));
+            const subResult = collectFlatFiles(rootPath, fullPath, maxDepth, depth + 1);
+            files.push(...subResult.files);
+            filteredDirs.push(...subResult.filteredDirs);
         }
     }
 
-    return files;
+    return { files, filteredDirs };
 }
 
 // GET /api/files - Get file tree structure
@@ -91,11 +135,13 @@ router.get('/', (req: Request, res: Response) => {
 // GET /api/files/flat - Get flat list of all files
 router.get('/flat', (req: Request, res: Response) => {
     const state = req.app.locals.state as AppState;
-    const files = collectFlatFiles(state.cwd, state.cwd, 10);
-    files.sort();
+    const result = collectFlatFiles(state.cwd, state.cwd, 10);
+    result.files.sort();
+    result.filteredDirs.sort();
 
     const response: FlatFilesResponse = {
-        files,
+        files: result.files,
+        filteredDirs: result.filteredDirs,
     };
 
     res.json(response);
