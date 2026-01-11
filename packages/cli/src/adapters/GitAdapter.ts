@@ -286,7 +286,8 @@ export class GitAdapter implements PartialGitPort {
                 { maxBuffer: 1024 * 1024 },
                 (error, stdout) => {
                     if (error) {
-                        resolve(false);
+                        // 에러 시 안전하게 dirty로 처리 (데이터 손실 방지)
+                        resolve(true);
                         return;
                     }
                     // ?? 로 시작하는 줄(untracked)을 제외한 변경사항이 있는지

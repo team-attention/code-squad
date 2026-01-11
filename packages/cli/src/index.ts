@@ -262,7 +262,7 @@ function parseNewArgs(args: string[]): NewArgs {
     for (const arg of args) {
         if (arg === '-s' || arg === '--split') {
             split = true;
-        } else if (!arg.startsWith('-')) {
+        } else if (!arg.startsWith('-') && !name) {
             name = arg;
         }
     }
