@@ -20,6 +20,10 @@ export interface ProjectConfig {
  */
 export interface GlobalConfig {
     /**
+     * 모든 프로젝트에 적용되는 기본 설정
+     */
+    defaults?: ProjectConfig;
+    /**
      * 프로젝트별 설정
      * 키: 프로젝트 경로 (절대 경로)
      */
@@ -46,12 +50,20 @@ async function loadGlobalConfig(): Promise<GlobalConfig> {
 
 /**
  * 프로젝트 설정 로드
- * 글로벌 설정에서 해당 프로젝트 경로의 설정을 찾음
+ * 글로벌 설정에서 해당 프로젝트 경로의 설정을 찾고, defaults와 병합
  */
 export async function loadConfig(workspaceRoot: string): Promise<ProjectConfig> {
     const globalConfig = await loadGlobalConfig();
     const normalizedPath = path.resolve(workspaceRoot);
-    return globalConfig.projects?.[normalizedPath] ?? {};
+    const projectConfig = globalConfig.projects?.[normalizedPath] ?? {};
+    const defaults = globalConfig.defaults ?? {};
+
+    return {
+        worktreeCopyPatterns: [
+            ...(defaults.worktreeCopyPatterns ?? []),
+            ...(projectConfig.worktreeCopyPatterns ?? []),
+        ],
+    };
 }
 
 /**
