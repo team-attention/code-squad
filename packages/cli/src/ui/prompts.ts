@@ -36,13 +36,13 @@ const cancelableInput = createPrompt<string | null, { message: string; default?:
                 setError(null);
             } else if (key.ctrl || key.name === 'tab' || key.name === 'up' || key.name === 'down') {
                 // ignore control keys
-            } else if (key.name && key.name.length === 1) {
-                // single character
-                setValue(value + key.name);
-                setError(null);
-            } else if (key.name === 'space') {
-                setValue(value + ' ');
-                setError(null);
+            } else {
+                // printable character (use sequence for accurate input including -, _, etc.)
+                const seq = (key as unknown as { sequence?: string }).sequence;
+                if (seq && seq.length === 1 && seq >= ' ') {
+                    setValue(value + seq);
+                    setError(null);
+                }
             }
         });
 
