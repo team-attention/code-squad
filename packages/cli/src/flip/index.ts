@@ -4,6 +4,8 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { execSync } from 'child_process';
+import { confirm, select } from '@inquirer/prompts';
+import clipboardy from 'clipboardy';
 
 const DEFAULT_PORT = 51234;
 
@@ -194,29 +196,77 @@ osascript ${applescriptPath} > /dev/null 2>&1
     fs.writeFileSync(shPath, shContent);
     fs.chmodSync(shPath, '755');
 
-    // Print instructions
-    console.log('✓ Hotkey scripts created:');
-    console.log(`  ${applescriptPath}`);
+    console.log('');
+    console.log('┌─────────────────────────────────────────────────┐');
+    console.log('│           Flip Hotkey Setup Wizard              │');
+    console.log('└─────────────────────────────────────────────────┘');
+    console.log('');
+    console.log('✓ Scripts generated:');
     console.log(`  ${shPath}`);
     console.log('');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+    // Step 1: Open iTerm2 Settings
+    const openSettings = await confirm({
+        message: 'Open iTerm2 Settings? (Keys → Key Bindings)',
+        default: true,
+    });
+
+    if (openSettings) {
+        try {
+            execSync(`osascript -e 'tell application "iTerm2" to activate' -e 'tell application "System Events" to keystroke "," using command down'`);
+            console.log('');
+            console.log('  → iTerm2 Settings opened. Navigate to: Keys → Key Bindings');
+        } catch {
+            console.log('  → Could not open settings automatically. Open manually: iTerm2 → Settings → Keys → Key Bindings');
+        }
+    }
+
     console.log('');
-    console.log('iTerm2 Setup:');
+
+    // Step 2: Guide through adding key binding
+    const ready = await confirm({
+        message: 'Ready to add Key Binding? (Click + button in Key Bindings tab)',
+        default: true,
+    });
+
+    if (!ready) {
+        console.log('');
+        console.log('Run `csq flip setup` again when ready.');
+        return;
+    }
+
     console.log('');
-    console.log('1. Open iTerm2 → Settings → Keys → Key Bindings');
-    console.log('2. Click + to add new binding');
-    console.log('3. Set:');
-    console.log('   • Keyboard Shortcut: ⌘⇧F (or your preferred key)');
-    console.log('   • Action: Run Coprocess');
-    console.log('   • Command:');
+    console.log('┌─────────────────────────────────────────────────┐');
+    console.log('│  Configure the Key Binding:                     │');
+    console.log('├─────────────────────────────────────────────────┤');
+    console.log('│  1. Keyboard Shortcut: Press your hotkey        │');
+    console.log('│     (e.g., ⌘⇧F)                                 │');
+    console.log('│                                                 │');
+    console.log('│  2. Action: Select "Run Coprocess"              │');
+    console.log('│                                                 │');
+    console.log('│  3. Command: Paste the path (copied below)      │');
+    console.log('└─────────────────────────────────────────────────┘');
     console.log('');
-    console.log(`     ${shPath}`);
+
+    // Copy path to clipboard
+    await clipboardy.write(shPath);
+    console.log(`✓ Copied to clipboard: ${shPath}`);
     console.log('');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+    await confirm({
+        message: 'Done configuring? (Paste the path and click OK)',
+        default: true,
+    });
+
     console.log('');
-    console.log('Usage:');
-    console.log('1. Focus on terminal panel (Claude Code, Codex, etc.)');
-    console.log('2. Press hotkey → browser opens');
-    console.log('3. Select files, add comments');
-    console.log('4. Submit → text appears in original panel');
+    console.log('┌─────────────────────────────────────────────────┐');
+    console.log('│  Setup Complete!                                │');
+    console.log('├─────────────────────────────────────────────────┤');
+    console.log('│  Usage:                                         │');
+    console.log('│  1. Focus on any terminal panel                 │');
+    console.log('│  2. Press your hotkey → browser opens           │');
+    console.log('│  3. Select files, add comments                  │');
+    console.log('│  4. Submit → text appears in terminal           │');
+    console.log('└─────────────────────────────────────────────────┘');
+    console.log('');
 }
