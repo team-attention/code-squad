@@ -161,8 +161,9 @@ async function setupHotkey(): Promise<void> {
         nodePath = '/usr/local/bin/node';
     }
 
-    // Get csq path (this script's location)
-    const csqPath = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../index.js');
+    // Get csq path - after bundling, all code is in dist/index.js
+    // so import.meta.url points directly to the entry point
+    const csqPath = new URL(import.meta.url).pathname;
 
     // Create config directory
     fs.mkdirSync(configDir, { recursive: true });
