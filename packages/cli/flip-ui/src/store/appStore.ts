@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { FileNode, FileResponse, GitStatusResponse } from '../api'
+import type { FileNode, FileResponse, GitStatusResponse, FileWithMtime } from '../api'
 
 export interface Selection {
   startLine: number
@@ -11,9 +11,10 @@ interface AppState {
   fileTree: FileNode[]
   flatFiles: string[]
   filteredDirs: string[]
+  recentFile: string | null
   expandedDirs: Set<string>
   setFileTree: (tree: FileNode[]) => void
-  setFlatFiles: (files: string[], filteredDirs: string[]) => void
+  setFlatFiles: (files: FileWithMtime[], filteredDirs: string[], recentFile: string | null) => void
   toggleDir: (path: string) => void
 
   // Current file
@@ -39,9 +40,11 @@ export const useAppStore = create<AppState>((set) => ({
   fileTree: [],
   flatFiles: [],
   filteredDirs: [],
+  recentFile: null,
   expandedDirs: new Set<string>(),
   setFileTree: (tree) => set({ fileTree: tree }),
-  setFlatFiles: (files, filteredDirs) => set({ flatFiles: files, filteredDirs }),
+  setFlatFiles: (files, filteredDirs, recentFile) =>
+    set({ flatFiles: files.map((f) => f.path), filteredDirs, recentFile }),
   toggleDir: (path) =>
     set((state) => {
       const newExpanded = new Set(state.expandedDirs)

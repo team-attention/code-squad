@@ -11,9 +11,15 @@ export interface FilesResponse {
   tree: FileNode[]
 }
 
+export interface FileWithMtime {
+  path: string
+  mtime: number
+}
+
 export interface FlatFilesResponse {
-  files: string[]
+  files: FileWithMtime[]
   filteredDirs: string[]
+  recentFile: string | null
 }
 
 export interface FileResponse {
