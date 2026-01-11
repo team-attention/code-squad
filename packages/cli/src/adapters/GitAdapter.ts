@@ -218,4 +218,83 @@ export class GitAdapter implements PartialGitPort {
             );
         });
     }
+
+    /**
+     * 현재 디렉토리가 워크트리인지 확인하고 컨텍스트 반환
+     */
+    async getWorktreeContext(cwd: string): Promise<{
+        isWorktree: boolean;
+        mainRoot: string | null;
+        currentPath: string;
+        branch: string | null;
+    }> {
+        // git-common-dir로 워크트리 여부 확인
+        const commonDir = await new Promise<string | null>((resolve) => {
+            exec(
+                `cd "${cwd}" && git rev-parse --git-common-dir`,
+                { maxBuffer: 1024 * 1024 },
+                (error, stdout) => {
+                    if (error) {
+                        resolve(null);
+                        return;
+                    }
+                    resolve(stdout.trim());
+                }
+            );
+        });
+
+        if (!commonDir) {
+            return { isWorktree: false, mainRoot: null, currentPath: cwd, branch: null };
+        }
+
+        // .git 이면 메인 레포, 아니면 워크트리
+        const isWorktree = commonDir !== '.git';
+
+        if (!isWorktree) {
+            return { isWorktree: false, mainRoot: cwd, currentPath: cwd, branch: null };
+        }
+
+        // 메인 레포 루트 찾기 (worktree list의 첫 번째)
+        const mainRoot = await new Promise<string | null>((resolve) => {
+            exec(
+                `cd "${cwd}" && git worktree list --porcelain`,
+                { maxBuffer: 1024 * 1024 },
+                (error, stdout) => {
+                    if (error) {
+                        resolve(null);
+                        return;
+                    }
+                    const match = stdout.match(/^worktree (.+)$/m);
+                    resolve(match ? match[1] : null);
+                }
+            );
+        });
+
+        // 현재 브랜치
+        const branch = await this.getWorktreeBranch(cwd).catch(() => null);
+
+        return { isWorktree, mainRoot, currentPath: cwd, branch };
+    }
+
+    /**
+     * staged 또는 unstaged 변경사항이 있는지 확인 (untracked 제외)
+     */
+    async hasDirtyState(workspacePath: string): Promise<boolean> {
+        return new Promise((resolve) => {
+            exec(
+                `cd "${workspacePath}" && git status --porcelain`,
+                { maxBuffer: 1024 * 1024 },
+                (error, stdout) => {
+                    if (error) {
+                        resolve(false);
+                        return;
+                    }
+                    // ?? 로 시작하는 줄(untracked)을 제외한 변경사항이 있는지
+                    const lines = stdout.split('\n').filter(line => line.trim());
+                    const dirtyLines = lines.filter(line => !line.startsWith('??'));
+                    resolve(dirtyLines.length > 0);
+                }
+            );
+        });
+    }
 }

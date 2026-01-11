@@ -15,6 +15,7 @@ import {
     confirmDeleteWorktree,
     confirmDeleteLocal,
 } from './ui/prompts.js';
+import { confirm } from '@inquirer/prompts';
 import type { WorktreeInfo } from '@code-squad/core';
 import { runFlip } from './flip/index.js';
 import { loadConfig, getWorktreeCopyPatterns } from './config.js';
@@ -76,7 +77,10 @@ async function main() {
             await listThreads(workspaceRoot);
             break;
         case 'new':
-            await createWorktree(workspaceRoot, filteredArgs[1]);
+            await createWorktreeCommand(workspaceRoot, filteredArgs.slice(1));
+            break;
+        case 'quit':
+            await quitWorktreeCommand();
             break;
         default:
             if (persistentMode) {
@@ -244,7 +248,116 @@ async function listThreads(workspaceRoot: string) {
 }
 
 /**
- * 새 워크트리 생성
+ * new 서브커맨드 인자 파싱
+ */
+interface NewArgs {
+    name: string | undefined;
+    split: boolean;
+}
+
+function parseNewArgs(args: string[]): NewArgs {
+    let name: string | undefined;
+    let split = false;
+
+    for (const arg of args) {
+        if (arg === '-s' || arg === '--split') {
+            split = true;
+        } else if (!arg.startsWith('-')) {
+            name = arg;
+        }
+    }
+
+    return { name, split };
+}
+
+/**
+ * csq new 서브커맨드 처리
+ */
+async function createWorktreeCommand(workspaceRoot: string, args: string[]) {
+    const { name, split } = parseNewArgs(args);
+
+    if (!name) {
+        console.error(chalk.red('Error: Name is required'));
+        console.error(chalk.dim('Usage: csq new <name> [-s|--split]'));
+        process.exit(1);
+    }
+
+    const repoName = path.basename(workspaceRoot);
+    const defaultBasePath = path.join(
+        path.dirname(workspaceRoot),
+        `${repoName}.worktree`
+    );
+    const worktreePath = path.join(defaultBasePath, name);
+
+    try {
+        await gitAdapter.createWorktree(worktreePath, name, workspaceRoot);
+        console.log(chalk.green(`✓ Created worktree: ${name}`));
+
+        // 설정 파일에서 복사할 패턴 읽어서 파일 복사
+        await copyWorktreeFiles(workspaceRoot, worktreePath);
+
+        if (split) {
+            // split pane으로 새 터미널 열기
+            await openNewTerminal(worktreePath);
+        } else {
+            // 셸 함수가 마지막 줄을 보고 cd 실행
+            console.log(worktreePath);
+        }
+    } catch (error) {
+        console.error(
+            chalk.red(`Failed to create worktree: ${(error as Error).message}`)
+        );
+        process.exit(1);
+    }
+}
+
+/**
+ * csq quit 서브커맨드 처리
+ */
+async function quitWorktreeCommand() {
+    const cwd = process.cwd();
+    const context = await gitAdapter.getWorktreeContext(cwd);
+
+    if (!context.isWorktree) {
+        console.error(chalk.red('Error: Not in a worktree'));
+        process.exit(1);
+    }
+
+    if (!context.mainRoot || !context.branch) {
+        console.error(chalk.red('Error: Could not determine worktree context'));
+        process.exit(1);
+    }
+
+    // dirty state 확인
+    const isDirty = await gitAdapter.hasDirtyState(cwd);
+    if (isDirty) {
+        const confirmed = await confirm({
+            message: 'Uncommitted changes detected. Delete anyway?',
+            default: false,
+        });
+        if (!confirmed) {
+            console.log(chalk.dim('Cancelled.'));
+            process.exit(0);
+        }
+    }
+
+    try {
+        // 워크트리 삭제
+        await gitAdapter.removeWorktree(context.currentPath, context.mainRoot, true);
+        // 브랜치 삭제
+        await gitAdapter.deleteBranch(context.branch, context.mainRoot, true);
+
+        console.log(chalk.green(`✓ Deleted worktree and branch: ${context.branch}`));
+        // 셸 함수가 마지막 줄을 보고 cd 실행
+        console.log(context.mainRoot);
+    } catch (error) {
+        console.error(chalk.red(`Failed to quit: ${(error as Error).message}`));
+        process.exit(1);
+    }
+}
+
+/**
+ * 새 워크트리 생성 (TUI용 - 기존 유지)
  */
 async function createWorktree(workspaceRoot: string, name?: string) {
     const repoName = path.basename(workspaceRoot);
