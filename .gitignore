@@ -2,12 +2,14 @@
 node_modules/
 .pnpm-store/
 packages/*/node_modules/
+packages/cli/flip-ui/node_modules/
 
 # Build output
 out/
 dist/
 packages/*/dist/
 packages/*/out/
+packages/cli/flip-ui/dist/
 
 # VSCode extension package
 *.vsix

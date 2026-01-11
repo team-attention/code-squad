@@ -16,6 +16,7 @@ import {
     confirmDeleteLocal,
 } from './ui/prompts.js';
 import type { WorktreeInfo } from '@code-squad/core';
+import { runFlip } from './flip/index.js';
 
 // Ctrl+C 시 깔끔하게 종료
 process.on('SIGINT', () => {
@@ -51,6 +52,12 @@ async function main() {
     // --init: shell function 출력
     if (command === '--init' || command === 'init') {
         printShellInit();
+        return;
+    }
+
+    // flip 서브커맨드는 git repo 체크 없이 바로 실행
+    if (command === 'flip') {
+        await runFlip(filteredArgs.slice(1));
         return;
     }
 
