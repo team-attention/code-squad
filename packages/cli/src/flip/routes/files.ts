@@ -17,9 +17,15 @@ export interface FilesResponse {
     tree: FileNode[];
 }
 
+export interface FileWithMtime {
+    path: string;
+    mtime: number;
+}
+
 export interface FlatFilesResponse {
-    files: string[];
+    files: FileWithMtime[];
     filteredDirs: string[];
+    recentFile: string | null;
 }
 
 // Patterns to filter for performance (O(1) lookup with Set)
@@ -93,7 +99,7 @@ function buildFileTree(rootPath: string, currentPath: string, maxDepth: number, 
 }
 
 interface CollectResult {
-    files: string[];
+    files: FileWithMtime[];
     filteredDirs: string[];
 }
 
@@ -121,7 +127,15 @@ function collectFlatFiles(
         }
 
         if (entry.isFile()) {
-            result.files.push(relativePath);
+            try {
+                const stat = fs.statSync(fullPath);
+                result.files.push({
+                    path: relativePath,
+                    mtime: stat.mtimeMs,
+                });
+            } catch {
+                // Skip files that can't be stat'd
+            }
         } else if (entry.isDirectory()) {
             collectFlatFiles(rootPath, fullPath, maxDepth, depth + 1, result);
         }
@@ -143,16 +157,28 @@ router.get('/', (req: Request, res: Response) => {
     res.json(response);
 });
 
-// GET /api/files/flat - Get flat list of all files
+// GET /api/files/flat - Get flat list of all files with mtime
 router.get('/flat', (req: Request, res: Response) => {
     const state = req.app.locals.state as AppState;
     const result = collectFlatFiles(state.cwd, state.cwd, 10);
-    result.files.sort();
+
+    // Sort files by path for consistent display
+    result.files.sort((a, b) => a.path.localeCompare(b.path));
     result.filteredDirs.sort();
+
+    // Find the most recently modified file
+    let recentFile: string | null = null;
+    if (result.files.length > 0) {
+        const mostRecent = result.files.reduce((prev, curr) =>
+            curr.mtime > prev.mtime ? curr : prev
+        );
+        recentFile = mostRecent.path;
+    }
 
     const response: FlatFilesResponse = {
         files: result.files,
         filteredDirs: result.filteredDirs,
+        recentFile,
     };
 
     res.json(response);

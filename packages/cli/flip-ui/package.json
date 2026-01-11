@@ -9,7 +9,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@shikijs/engine-javascript": "^3.21.0",
     "fuse.js": "^7.0.0",
+    "highlight.js": "^11.11.1",
     "lucide-react": "^0.468.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

@@ -18,6 +18,7 @@ function App() {
     setFileTree,
     setFlatFiles,
     setGitStatus,
+    setCurrentFile,
     showFuzzyFinder,
     setShowFuzzyFinder,
     clearSelection,
@@ -40,7 +41,7 @@ function App() {
   // Get session ID from URL query parameter
   const sessionId = new URLSearchParams(window.location.search).get('session') || ''
 
-  // Load initial data
+  // Load initial data and auto-select most recently modified file
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -50,14 +51,24 @@ function App() {
           api.getGitStatus(),
         ])
         setFileTree(filesRes.tree)
-        setFlatFiles(flatRes.files, flatRes.filteredDirs)
+        setFlatFiles(flatRes.files, flatRes.filteredDirs, flatRes.recentFile)
         setGitStatus(gitRes)
+
+        // Auto-select the most recently modified file
+        if (flatRes.recentFile) {
+          try {
+            const file = await api.getFile(flatRes.recentFile)
+            setCurrentFile(file)
+          } catch (err) {
+            console.error('Failed to load recent file:', err)
+          }
+        }
       } catch (err) {
         console.error('Failed to load data:', err)
       }
     }
     loadData()
-  }, [setFileTree, setFlatFiles, setGitStatus])
+  }, [setFileTree, setFlatFiles, setGitStatus, setCurrentFile])
 
   // Handle keyboard shortcuts
   useKeyboardShortcuts({
