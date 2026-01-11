@@ -22,64 +22,6 @@ export interface FlatFilesResponse {
 
 const router: IRouter = Router();
 
-// Default ignore patterns (similar to .gitignore behavior)
-const DEFAULT_IGNORES = [
-    'node_modules',
-    '.git',
-    '.svn',
-    '.hg',
-    'dist',
-    'build',
-    'out',
-    '.cache',
-    '.next',
-    '.nuxt',
-    'coverage',
-    '__pycache__',
-    '.pytest_cache',
-    'target',
-    'Cargo.lock',
-    'package-lock.json',
-    'pnpm-lock.yaml',
-    'yarn.lock',
-    '.DS_Store',
-];
-
-// Dotfiles that should be visible in the file tree
-const VISIBLE_DOTFILES = new Set([
-    '.gitignore',
-    '.gitattributes',
-    '.env.example',
-    '.env.local.example',
-    '.eslintrc',
-    '.eslintrc.js',
-    '.eslintrc.cjs',
-    '.eslintrc.json',
-    '.eslintrc.yml',
-    '.prettierrc',
-    '.prettierrc.js',
-    '.prettierrc.cjs',
-    '.prettierrc.json',
-    '.prettierrc.yml',
-    '.editorconfig',
-    '.npmrc',
-    '.nvmrc',
-    '.node-version',
-    '.dockerignore',
-    '.browserslistrc',
-    '.babelrc',
-    '.babelrc.js',
-    '.babelrc.json',
-]);
-
-function shouldIgnore(name: string): boolean {
-    if (name.startsWith('.')) {
-        // Allow specific dotfiles
-        return !VISIBLE_DOTFILES.has(name);
-    }
-    return DEFAULT_IGNORES.includes(name);
-}
-
 function buildFileTree(rootPath: string, currentPath: string, maxDepth: number, depth: number = 0): FileNode[] {
     if (depth > maxDepth) return [];
 
@@ -94,8 +36,6 @@ function buildFileTree(rootPath: string, currentPath: string, maxDepth: number, 
     });
 
     for (const entry of entries) {
-        if (shouldIgnore(entry.name)) continue;
-
         const fullPath = path.join(currentPath, entry.name);
         const relativePath = path.relative(rootPath, fullPath);
 
@@ -122,8 +62,6 @@ function collectFlatFiles(rootPath: string, currentPath: string, maxDepth: numbe
     const files: string[] = [];
 
     for (const entry of entries) {
-        if (shouldIgnore(entry.name)) continue;
-
         const fullPath = path.join(currentPath, entry.name);
         const relativePath = path.relative(rootPath, fullPath);
 
