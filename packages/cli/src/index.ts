@@ -350,8 +350,8 @@ end tell`;
 async function interactiveMode(workspaceRoot: string) {
     const result = await runInteraction(workspaceRoot);
     if (result?.cdPath) {
-        // Open new terminal for the selected/created thread
-        await openNewTerminal(result.cdPath);
+        // Output path for shell wrapper to cd (no new terminal)
+        console.log(result.cdPath);
     }
 }
 
