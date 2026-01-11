@@ -22,9 +22,9 @@ export interface FlatFilesResponse {
     filteredDirs: string[];
 }
 
-// Patterns to filter for performance
+// Patterns to filter for performance (O(1) lookup with Set)
 // These are system directories that users don't directly edit
-const FILTERED_PATTERNS = [
+const FILTERED_PATTERNS = new Set([
     // Package managers
     'node_modules',
     'vendor',
@@ -40,10 +40,18 @@ const FILTERED_PATTERNS = [
     'dist',
     'build',
     'out',
-];
+    // Cache directories
+    '.cache',
+    '.next',
+    '.nuxt',
+    'coverage',
+    '__pycache__',
+    '.pytest_cache',
+    'target',
+]);
 
 function isFiltered(name: string): boolean {
-    return FILTERED_PATTERNS.includes(name);
+    return FILTERED_PATTERNS.has(name);
 }
 
 const router: IRouter = Router();
@@ -89,12 +97,17 @@ interface CollectResult {
     filteredDirs: string[];
 }
 
-function collectFlatFiles(rootPath: string, currentPath: string, maxDepth: number, depth: number = 0): CollectResult {
-    if (depth > maxDepth) return { files: [], filteredDirs: [] };
+// Memory-efficient: pass result object through recursion to avoid intermediate arrays
+function collectFlatFiles(
+    rootPath: string,
+    currentPath: string,
+    maxDepth: number,
+    depth: number = 0,
+    result: CollectResult = { files: [], filteredDirs: [] }
+): CollectResult {
+    if (depth > maxDepth) return result;
 
     const entries = fs.readdirSync(currentPath, { withFileTypes: true });
-    const files: string[] = [];
-    const filteredDirs: string[] = [];
 
     for (const entry of entries) {
         const fullPath = path.join(currentPath, entry.name);
@@ -102,21 +115,19 @@ function collectFlatFiles(rootPath: string, currentPath: string, maxDepth: numbe
 
         if (isFiltered(entry.name)) {
             if (entry.isDirectory()) {
-                filteredDirs.push(relativePath);
+                result.filteredDirs.push(relativePath);
             }
             continue; // Don't traverse filtered directories
         }
 
         if (entry.isFile()) {
-            files.push(relativePath);
+            result.files.push(relativePath);
         } else if (entry.isDirectory()) {
-            const subResult = collectFlatFiles(rootPath, fullPath, maxDepth, depth + 1);
-            files.push(...subResult.files);
-            filteredDirs.push(...subResult.filteredDirs);
+            collectFlatFiles(rootPath, fullPath, maxDepth, depth + 1, result);
         }
     }
 
-    return { files, filteredDirs };
+    return result;
 }
 
 // GET /api/files - Get file tree structure
