@@ -20,42 +20,99 @@ interface UseShikiOptions {
 // Singleton highlighter promise
 let highlighterPromise: Promise<Highlighter> | null = null
 
-// Language mapping for common extensions
+// Language normalization mapping (backend language -> Shiki language)
 const languageMap: Record<string, string> = {
-  js: 'javascript',
+  // Handle plaintext/text fallback
+  plaintext: 'text',
+  text: 'text',
+
+  // JavaScript/TypeScript
+  javascript: 'javascript',
+  typescript: 'typescript',
   jsx: 'jsx',
-  ts: 'typescript',
   tsx: 'tsx',
-  py: 'python',
-  rb: 'ruby',
-  rs: 'rust',
+
+  // Systems
+  rust: 'rust',
   go: 'go',
-  java: 'java',
-  kt: 'kotlin',
-  swift: 'swift',
   c: 'c',
   cpp: 'cpp',
-  h: 'c',
-  hpp: 'cpp',
-  cs: 'csharp',
+
+  // JVM
+  java: 'java',
+  kotlin: 'kotlin',
+  scala: 'scala',
+  groovy: 'groovy',
+
+  // Scripting
+  python: 'python',
+  ruby: 'ruby',
   php: 'php',
+  perl: 'perl',
+  lua: 'lua',
+
+  // Mobile
+  swift: 'swift',
+  'objective-c': 'objective-c',
+  'objective-cpp': 'objective-cpp',
+  dart: 'dart',
+
+  // Web
   html: 'html',
   css: 'css',
   scss: 'scss',
+  sass: 'sass',
   less: 'less',
-  json: 'json',
-  yaml: 'yaml',
-  yml: 'yaml',
-  md: 'markdown',
-  markdown: 'markdown',
-  sql: 'sql',
-  sh: 'bash',
-  bash: 'bash',
-  zsh: 'bash',
-  dockerfile: 'dockerfile',
-  xml: 'xml',
   vue: 'vue',
   svelte: 'svelte',
+  astro: 'astro',
+
+  // Data formats
+  json: 'json',
+  jsonc: 'jsonc',
+  yaml: 'yaml',
+  toml: 'toml',
+  xml: 'xml',
+  csv: 'csv',
+
+  // Documentation
+  markdown: 'markdown',
+  mdx: 'mdx',
+  rst: 'rst',
+  latex: 'latex',
+
+  // Shell
+  bash: 'bash',
+  fish: 'fish',
+  powershell: 'powershell',
+  batch: 'bat',
+
+  // Database/Query
+  sql: 'sql',
+  prisma: 'prisma',
+  graphql: 'graphql',
+
+  // Config
+  ini: 'ini',
+  dotenv: 'dotenv',
+
+  // Build/DevOps
+  dockerfile: 'dockerfile',
+  makefile: 'makefile',
+  cmake: 'cmake',
+
+  // Version control
+  gitignore: 'gitignore',
+  gitattributes: 'gitattributes',
+
+  // Diff
+  diff: 'diff',
+
+  // Editor config
+  editorconfig: 'editorconfig',
+
+  // C#
+  csharp: 'csharp',
 }
 
 async function getShikiHighlighter(): Promise<Highlighter> {
@@ -63,6 +120,7 @@ async function getShikiHighlighter(): Promise<Highlighter> {
     highlighterPromise = createHighlighter({
       themes: ['github-dark'],
       langs: [
+        // Core languages - loaded immediately
         'typescript',
         'javascript',
         'tsx',
@@ -88,9 +146,15 @@ async function getShikiHighlighter(): Promise<Highlighter> {
         'sql',
         'bash',
         'dockerfile',
+        'makefile',
         'xml',
         'vue',
         'svelte',
+        'graphql',
+        'toml',
+        'ini',
+        'diff',
+        'gitignore',
       ],
     })
   }

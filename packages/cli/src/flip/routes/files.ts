@@ -45,9 +45,37 @@ const DEFAULT_IGNORES = [
     '.DS_Store',
 ];
 
+// Dotfiles that should be visible in the file tree
+const VISIBLE_DOTFILES = new Set([
+    '.gitignore',
+    '.gitattributes',
+    '.env.example',
+    '.env.local.example',
+    '.eslintrc',
+    '.eslintrc.js',
+    '.eslintrc.cjs',
+    '.eslintrc.json',
+    '.eslintrc.yml',
+    '.prettierrc',
+    '.prettierrc.js',
+    '.prettierrc.cjs',
+    '.prettierrc.json',
+    '.prettierrc.yml',
+    '.editorconfig',
+    '.npmrc',
+    '.nvmrc',
+    '.node-version',
+    '.dockerignore',
+    '.browserslistrc',
+    '.babelrc',
+    '.babelrc.js',
+    '.babelrc.json',
+]);
+
 function shouldIgnore(name: string): boolean {
-    if (name.startsWith('.') && name !== '.gitignore' && name !== '.env.example') {
-        return true;
+    if (name.startsWith('.')) {
+        // Allow specific dotfiles
+        return !VISIBLE_DOTFILES.has(name);
     }
     return DEFAULT_IGNORES.includes(name);
 }

@@ -1,3 +1,4 @@
+import { X, MessageSquare } from 'lucide-react'
 import { useStagingStore } from '../store/stagingStore'
 
 function StagingList() {
@@ -15,9 +16,12 @@ function StagingList() {
     return (
       <div className="staging-list staging-list-empty">
         <div className="staging-header">Staged Selections</div>
-        <p className="staging-hint">
-          Select lines in the code viewer and add a comment to stage them
-        </p>
+        <div className="empty-state">
+          <MessageSquare size={32} className="empty-state-icon" />
+          <p className="staging-hint">
+            Select lines in the code viewer and add a comment to stage them
+          </p>
+        </div>
       </div>
     )
   }
@@ -42,7 +46,7 @@ function StagingList() {
                 onClick={() => removeItem(item.id)}
                 title="Remove"
               >
-                x
+                <X size={14} />
               </button>
             </div>
             <div className="staging-comment">{item.comment}</div>
