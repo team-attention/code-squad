@@ -35,7 +35,11 @@ async function loadGlobalConfig(): Promise<GlobalConfig> {
     try {
         const content = await fs.promises.readFile(GLOBAL_CONFIG_PATH, 'utf-8');
         return JSON.parse(content) as GlobalConfig;
-    } catch {
+    } catch (error: unknown) {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+            return {};
+        }
+        console.warn(`[Code Squad] Warning: Could not load global config at ${GLOBAL_CONFIG_PATH}.`, error);
         return {};
     }
 }
