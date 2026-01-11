@@ -59,9 +59,13 @@ export async function loadConfig(workspaceRoot: string): Promise<ProjectConfig> 
     const defaults = globalConfig.defaults ?? {};
 
     return {
+        ...defaults,
+        ...projectConfig,
         worktreeCopyPatterns: [
-            ...(defaults.worktreeCopyPatterns ?? []),
-            ...(projectConfig.worktreeCopyPatterns ?? []),
+            ...new Set([
+                ...(defaults.worktreeCopyPatterns ?? []),
+                ...(projectConfig.worktreeCopyPatterns ?? []),
+            ]),
         ],
     };
 }
