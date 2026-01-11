@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react'
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, GitBranch } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import { useUIStore } from '../store/uiStore'
 import { api, type FileNode } from '../api'
@@ -98,8 +99,17 @@ function FileTree() {
           }}
         >
           <span className="tree-icon">
-            {isDir ? (isExpanded ? '\u25BC' : '\u25B6') : '\u00B7'}
+            {isDir ? (
+              isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
+            ) : (
+              <File size={14} />
+            )}
           </span>
+          {isDir && (
+            <span className="tree-folder-icon">
+              {isExpanded ? <FolderOpen size={14} /> : <Folder size={14} />}
+            </span>
+          )}
           <span className="tree-name">{node.name}</span>
           {gitStat && (
             <span className={`git-badge git-badge-${gitStat}`}>
@@ -133,7 +143,7 @@ function FileTree() {
               onClick={toggleGitFilter}
               title="Show only changed files (Cmd+G)"
             >
-              Git
+              <GitBranch size={12} />
               <span className="count">{changedCount}</span>
             </button>
           </div>

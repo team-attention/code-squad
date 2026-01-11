@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { FileCode, Search } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import { useUIStore } from '../store/uiStore'
 import { useShiki, type HighlightedLine, type TokenSpan } from '../hooks/useShiki'
@@ -248,8 +249,12 @@ function CodeViewer() {
   if (!currentFile) {
     return (
       <div className="code-viewer code-viewer-empty">
+        <FileCode size={48} className="empty-state-icon" />
         <p>Select a file to view its contents</p>
-        <p className="hint">Use Cmd+P or / to search for files</p>
+        <p className="hint">
+          <Search size={12} />
+          Use Cmd+P or / to search for files
+        </p>
       </div>
     )
   }
