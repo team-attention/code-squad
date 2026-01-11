@@ -63,6 +63,26 @@ export interface SubmitItem {
   comment: string
 }
 
+// SSE Event types
+export type FilesChangeEvent = {
+  type: 'files-changed'
+}
+
+export type FileContentEvent = {
+  type: 'file-changed'
+  path: string
+}
+
+export type GitChangeEvent = {
+  type: 'git-changed'
+}
+
+export type ConnectedEvent = {
+  type: 'connected'
+}
+
+export type SyncEvent = FilesChangeEvent | FileContentEvent | GitChangeEvent | ConnectedEvent
+
 export const api = {
   async getFiles(): Promise<FilesResponse> {
     const res = await fetch('/api/files')
@@ -111,5 +131,26 @@ export const api = {
   async cancel(): Promise<void> {
     const res = await fetch('/api/cancel', { method: 'POST' })
     if (!res.ok) throw new Error('Failed to cancel')
+  },
+
+  subscribeEvents(onEvent: (event: SyncEvent) => void): () => void {
+    const eventSource = new EventSource('/api/events')
+
+    eventSource.onmessage = (e) => {
+      try {
+        const event = JSON.parse(e.data) as SyncEvent
+        onEvent(event)
+      } catch (err) {
+        console.error('Failed to parse SSE event:', err)
+      }
+    }
+
+    eventSource.onerror = (err) => {
+      console.error('SSE connection error:', err)
+    }
+
+    return () => {
+      eventSource.close()
+    }
   },
 }

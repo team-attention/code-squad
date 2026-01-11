@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "build": "tsc && npm run bundle && npm run build:flip-ui",
-    "bundle": "esbuild dist/index.js --bundle --platform=node --format=esm --outfile=dist/index.js --allow-overwrite --external:@inquirer/core --external:@inquirer/prompts --external:chalk --external:express --external:cors --external:clipboardy --external:open --external:fast-glob",
+    "bundle": "esbuild dist/index.js --bundle --platform=node --format=esm --outfile=dist/index.js --allow-overwrite --external:@inquirer/core --external:@inquirer/prompts --external:chalk --external:chokidar --external:express --external:cors --external:clipboardy --external:open --external:fast-glob",
     "build:flip-ui": "cd flip-ui && pnpm build && mkdir -p ../dist/flip-ui && cp -r dist ../dist/flip-ui/",
     "build:watch": "tsc --watch",
     "dev": "tsx src/index.ts",
@@ -24,6 +24,7 @@
     "@inquirer/core": "^11.1.0",
     "@inquirer/prompts": "^7.2.1",
     "chalk": "^5.4.1",
+    "chokidar": "^4.0.3",
     "clipboardy": "^4.0.0",
     "cors": "^2.8.5",
     "express": "^4.18.2",

@@ -9,6 +9,7 @@ import { useAppStore } from './store/appStore'
 import { useStagingStore } from './store/stagingStore'
 import { useUIStore } from './store/uiStore'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { useRealtimeSync } from './hooks/useRealtimeSync'
 import { api } from './api'
 
 function App() {
@@ -37,6 +38,9 @@ function App() {
   } = useUIStore()
 
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Enable real-time file sync via SSE
+  useRealtimeSync()
 
   // Get session ID from URL query parameter
   const sessionId = new URLSearchParams(window.location.search).get('session') || ''
