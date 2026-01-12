@@ -12,21 +12,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Install pnpm
-        run: npm install -g pnpm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
       - name: Install dependencies
         run: pnpm install
+
+      - name: Build core
+        run: pnpm --filter @code-squad/core build
 
       - name: Build CLI
         run: pnpm --filter code-squad-cli build
 
       - name: Publish to npm
-        run: pnpm --filter code-squad-cli publish --no-git-checks
+        working-directory: packages/cli
+        run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

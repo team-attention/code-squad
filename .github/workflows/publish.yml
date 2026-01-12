@@ -12,24 +12,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install pnpm
-        run: npm install -g pnpm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
       - name: Install dependencies
         run: pnpm install
 
-      - name: Build
-        run: pnpm run compile
+      - name: Build core
+        run: pnpm --filter @code-squad/core build
 
-      - name: Package Extension
-        run: npx vsce package
+      - name: Build vscode extension
+        run: pnpm --filter code-squad build
+
+      - name: Install vsce
+        run: npm install -g @vscode/vsce
 
       - name: Publish to VS Code Marketplace
-        run: npx vsce publish -p ${{ secrets.VSCE_PAT }}
+        working-directory: packages/vscode
+        run: vsce publish -p ${{ secrets.VSCE_PAT }} --no-dependencies
 
-      - name: Publish to Open VSX
-        run: npx ovsx publish -p ${{ secrets.OVSX_PAT }}
+      - name: Install ovsx
+        run: npm install -g ovsx
+
+      - name: Publish to Open VSX (Cursor)
+        working-directory: packages/vscode
+        run: ovsx publish -p ${{ secrets.OVSX_PAT }} --no-dependencies
