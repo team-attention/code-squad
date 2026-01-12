@@ -148,7 +148,6 @@ function printUsage(): void {
 }
 
 async function setupHotkey(): Promise<void> {
-    // Get node and csq paths for iTerm2 setup
     let nodePath: string;
     try {
         nodePath = execSync('which node', { encoding: 'utf-8' }).trim();
@@ -156,41 +155,25 @@ async function setupHotkey(): Promise<void> {
         nodePath = '/usr/local/bin/node';
     }
     const csqPath = new URL(import.meta.url).pathname;
+    const command = `${nodePath} ${csqPath} flip`;
 
     console.log('');
     console.log('┌─────────────────────────────────────────────────┐');
-    console.log('│           Flip Hotkey Setup                     │');
+    console.log('│           Flip Hotkey Setup (iTerm2)            │');
     console.log('└─────────────────────────────────────────────────┘');
     console.log('');
-    console.log('Choose one of the following options:');
-    console.log('');
-    console.log('─────────────────────────────────────────────────');
-    console.log('Option 1: Zsh keybinding (Alt+;)');
-    console.log('─────────────────────────────────────────────────');
-    console.log('Add to ~/.zshrc:');
-    console.log('');
-    console.log('  # Flip hotkey (Alt+;)');
-    console.log('  csq-flip-widget() { (csq flip &); zle reset-prompt; }');
-    console.log('  zle -N csq-flip-widget');
-    console.log("  bindkey '\\e;' csq-flip-widget");
-    console.log('');
-    console.log('Then run: source ~/.zshrc');
-    console.log('');
-    console.log('─────────────────────────────────────────────────');
-    console.log('Option 2: iTerm2 hotkey (any key combo)');
-    console.log('─────────────────────────────────────────────────');
     console.log('1. iTerm2 → Settings → Keys → Key Bindings');
-    console.log('2. Click + to add new binding');
-    console.log('3. Set your hotkey (e.g., ⌘⇧F)');
+    console.log('2. + 클릭');
+    console.log('3. Keyboard Shortcut: ⌘⇧F (Cmd+Shift+F)');
     console.log('4. Action: "Run Coprocess"');
-    console.log('5. Command:');
+    console.log('5. Command (아래 자동 복사됨):');
     console.log('');
-    console.log(`  ${nodePath} ${csqPath} flip`);
+    console.log(`   ${command}`);
     console.log('');
 
     try {
-        await copyToClipboard(`${nodePath} ${csqPath} flip`);
-        console.log('  (Copied to clipboard!)');
+        await copyToClipboard(command);
+        console.log('   (Copied to clipboard!)');
     } catch {
         // Ignore clipboard errors
     }
