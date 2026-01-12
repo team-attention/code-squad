@@ -158,6 +158,40 @@ Create `~/.code-squad/config.json` to configure per-project settings for CLI:
 
 ---
 
+## CLI
+
+Code Squad includes a CLI tool `csq` with the `flip` command for visual prompt composition.
+
+### Installation
+
+```bash
+npm install -g code-squad-cli
+```
+
+### Usage
+
+```bash
+csq flip              # Open browser UI in current directory
+csq flip /path/to/dir # Open browser UI for specific directory
+csq flip setup        # Setup iTerm2 hotkey
+```
+
+### iTerm2 Hotkey Setup (macOS)
+
+Run `csq flip setup` and follow the instructions:
+
+1. **iTerm2 → Settings → Keys → Key Bindings**
+2. Click **+** to add new binding
+3. **Keyboard Shortcut**: Choose your preferred shortcut (e.g., `⌘⇧F`)
+4. **Action**: Select `Run Coprocess`
+5. **Command**: Paste the path from clipboard (e.g., `~/.config/csq/flip-hotkey.sh`)
+
+Now press the hotkey anywhere in iTerm2 to open the flip UI for your current directory.
+
+**Note**: Works even while Claude Code or other AI tools are running in the terminal.
+
+---
+
 ## Requirements
 
 - VS Code 1.93.0+ or Cursor

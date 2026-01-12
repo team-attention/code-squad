@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { api, SyncEvent } from '../api'
+import { api } from '../api'
 import { useAppStore } from '../store/appStore'
+
+const POLL_INTERVAL_MS = 2000
 
 export function useRealtimeSync(): void {
   const { currentFile, setFileTree, setFlatFiles, setGitStatus, setCurrentFile } = useAppStore()
@@ -12,52 +14,54 @@ export function useRealtimeSync(): void {
   }, [currentFile])
 
   useEffect(() => {
-    const handleEvent = async (event: SyncEvent) => {
-      switch (event.type) {
-        case 'connected':
-          // Connection established, no action needed
-          break
+    let mounted = true
 
-        case 'files-changed':
-          try {
-            const [filesRes, flatRes] = await Promise.all([
-              api.getFiles(),
-              api.getFlatFiles(),
-            ])
+    const poll = async () => {
+      if (!mounted) return
+
+      try {
+        const changes = await api.getChanges()
+
+        if (!mounted) return
+
+        // Refresh files if changed
+        if (changes.filesChanged) {
+          const [filesRes, flatRes] = await Promise.all([
+            api.getFiles(),
+            api.getFlatFiles(),
+          ])
+          if (mounted) {
             setFileTree(filesRes.tree)
             setFlatFiles(flatRes.files, flatRes.filteredDirs, flatRes.recentFile ?? null)
-          } catch (err) {
-            console.error('Failed to refresh files:', err)
           }
-          break
+        }
 
-        case 'file-changed':
-          // Only refresh if it's the currently viewed file
-          if (currentFileRef.current?.path === event.path) {
-            try {
-              const file = await api.getFile(event.path)
-              setCurrentFile(file)
-            } catch (err) {
-              console.error('Failed to refresh current file:', err)
-            }
+        // Refresh current file if it changed
+        if (currentFileRef.current && changes.changedFiles.includes(currentFileRef.current.path)) {
+          const file = await api.getFile(currentFileRef.current.path)
+          if (mounted) {
+            setCurrentFile(file)
           }
-          break
+        }
 
-        case 'git-changed':
-          try {
-            const gitRes = await api.getGitStatus()
+        // Refresh git status if changed
+        if (changes.gitChanged) {
+          const gitRes = await api.getGitStatus()
+          if (mounted) {
             setGitStatus(gitRes)
-          } catch (err) {
-            console.error('Failed to refresh git status:', err)
           }
-          break
+        }
+      } catch (err) {
+        // Session might be gone, ignore errors
+        console.error('Polling error:', err)
       }
     }
 
-    const unsubscribe = api.subscribeEvents(handleEvent)
+    const intervalId = setInterval(poll, POLL_INTERVAL_MS)
 
     return () => {
-      unsubscribe()
+      mounted = false
+      clearInterval(intervalId)
     }
   }, [setFileTree, setFlatFiles, setGitStatus, setCurrentFile])
 }

@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import type { Router as IRouter } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { AppState } from '../server/Server.js';
+import { SessionManager } from '../session/SessionManager.js';
 
 export interface FileResponse {
     path: string;
@@ -154,9 +154,33 @@ function detectLanguage(filePath: string): string {
     return 'text';
 }
 
-// GET /api/file?path=<path>
+/**
+ * Get cwd from session_id query parameter
+ */
+function getCwdFromSession(req: Request, res: Response): string | null {
+    const sessionId = req.query.session_id as string;
+
+    if (!sessionId) {
+        res.status(400).json({ error: 'Missing session_id parameter' });
+        return null;
+    }
+
+    const sessionManager = req.app.locals.sessionManager as SessionManager;
+    const session = sessionManager.getSession(sessionId);
+
+    if (!session) {
+        res.status(404).json({ error: 'Session not found' });
+        return null;
+    }
+
+    return session.cwd;
+}
+
+// GET /api/file?session_id=xxx&path=<path>
 router.get('/', (req: Request, res: Response) => {
-    const state = req.app.locals.state as AppState;
+    const cwd = getCwdFromSession(req, res);
+    if (!cwd) return;
+
     const relativePath = req.query.path as string;
 
     if (!relativePath) {
@@ -164,11 +188,11 @@ router.get('/', (req: Request, res: Response) => {
         return;
     }
 
-    const filePath = path.join(state.cwd, relativePath);
+    const filePath = path.join(cwd, relativePath);
 
     // Security check: ensure path is within cwd
     const resolvedPath = path.resolve(filePath);
-    const resolvedCwd = path.resolve(state.cwd);
+    const resolvedCwd = path.resolve(cwd);
 
     if (!resolvedPath.startsWith(resolvedCwd)) {
         res.status(403).json({ error: 'Access denied' });

@@ -1,6 +1,10 @@
 import { Router, Request, Response } from 'express';
 import type { Router as IRouter } from 'express';
-import { AppState } from '../server/Server.js';
+import { SessionManager } from '../session/SessionManager.js';
+
+export interface CancelRequest {
+    session_id: string;
+}
 
 export interface CancelResponse {
     status: string;
@@ -9,16 +13,20 @@ export interface CancelResponse {
 const router: IRouter = Router();
 
 // POST /api/cancel
-router.post('/', (req: Request, res: Response) => {
-    const state = req.app.locals.state as AppState;
+router.post('/', async (req: Request, res: Response) => {
+    const sessionManager = req.app.locals.sessionManager as SessionManager;
+    const body = req.body as CancelRequest;
 
-    // Send response before shutdown
+    if (!body.session_id) {
+        res.status(400).json({ error: 'Missing session_id' });
+        return;
+    }
+
+    // Send response before cleanup
     res.json({ status: 'ok' } as CancelResponse);
 
-    // Trigger shutdown without output
-    if (state.resolve) {
-        state.resolve(null);
-    }
+    // Unregister the session
+    await sessionManager.unregisterSession(body.session_id);
 });
 
 export { router as cancelRouter };

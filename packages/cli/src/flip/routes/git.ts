@@ -3,7 +3,7 @@ import type { Router as IRouter } from 'express';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { AppState } from '../server/Server.js';
+import { SessionManager } from '../session/SessionManager.js';
 
 export interface UnstagedFile {
     path: string;
@@ -156,15 +156,38 @@ function createAddedFileDiff(content: string): DiffHunk[] {
     }];
 }
 
-// GET /api/git/status
+/**
+ * Get cwd from session_id query parameter
+ */
+function getCwdFromSession(req: Request, res: Response): string | null {
+    const sessionId = req.query.session_id as string;
+
+    if (!sessionId) {
+        res.status(400).json({ error: 'Missing session_id parameter' });
+        return null;
+    }
+
+    const sessionManager = req.app.locals.sessionManager as SessionManager;
+    const session = sessionManager.getSession(sessionId);
+
+    if (!session) {
+        res.status(404).json({ error: 'Session not found' });
+        return null;
+    }
+
+    return session.cwd;
+}
+
+// GET /api/git/status?session_id=xxx
 router.get('/status', (req: Request, res: Response) => {
-    const state = req.app.locals.state as AppState;
+    const cwd = getCwdFromSession(req, res);
+    if (!cwd) return;
 
     // Check if it's a git repository
     let isGitRepo = false;
     try {
         execSync('git rev-parse --git-dir', {
-            cwd: state.cwd,
+            cwd,
             stdio: 'pipe',
         });
         isGitRepo = true;
@@ -185,7 +208,7 @@ router.get('/status', (req: Request, res: Response) => {
     let unstaged: UnstagedFile[] = [];
     try {
         const output = execSync('git status --porcelain', {
-            cwd: state.cwd,
+            cwd,
             encoding: 'utf-8',
         });
         unstaged = parseGitStatus(output);
@@ -201,9 +224,11 @@ router.get('/status', (req: Request, res: Response) => {
     res.json(response);
 });
 
-// GET /api/git/diff?path=<file>
+// GET /api/git/diff?session_id=xxx&path=<file>
 router.get('/diff', (req: Request, res: Response) => {
-    const state = req.app.locals.state as AppState;
+    const cwd = getCwdFromSession(req, res);
+    if (!cwd) return;
+
     const relativePath = req.query.path as string;
 
     if (!relativePath) {
@@ -211,13 +236,13 @@ router.get('/diff', (req: Request, res: Response) => {
         return;
     }
 
-    const fullPath = path.join(state.cwd, relativePath);
+    const fullPath = path.join(cwd, relativePath);
 
     // Check git status for this file
     let fileStatus: 'modified' | 'added' | 'deleted' | 'untracked' = 'modified';
     try {
         const statusOutput = execSync(`git status --porcelain -- "${relativePath}"`, {
-            cwd: state.cwd,
+            cwd,
             encoding: 'utf-8',
         });
 
@@ -251,7 +276,7 @@ router.get('/diff', (req: Request, res: Response) => {
     // Get diff for tracked file
     try {
         const diffOutput = execSync(`git diff --no-color -- "${relativePath}"`, {
-            cwd: state.cwd,
+            cwd,
             encoding: 'utf-8',
         });
 

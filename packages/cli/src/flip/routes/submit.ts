@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import type { Router as IRouter } from 'express';
-import { AppState } from '../server/Server.js';
 import { formatComments, copyToClipboard, schedulePaste, CommentLike } from '../output/index.js';
+import { SessionManager } from '../session/SessionManager.js';
 
 export interface SubmitItem {
     filePath: string;
@@ -28,8 +28,13 @@ const router: IRouter = Router();
 
 // POST /api/submit
 router.post('/', async (req: Request, res: Response) => {
-    const state = req.app.locals.state as AppState;
+    const sessionManager = req.app.locals.sessionManager as SessionManager;
     const body = req.body as SubmitRequest;
+
+    if (!body.session_id) {
+        res.status(400).json({ error: 'Missing session_id' });
+        return;
+    }
 
     if (!body.items || body.items.length === 0) {
         res.status(400).json({ error: 'No items to submit' });
@@ -68,13 +73,11 @@ router.post('/', async (req: Request, res: Response) => {
         }
     }
 
-    // Send response before shutdown
+    // Send response before cleanup
     res.json({ status: 'ok' } as SubmitResponse);
 
-    // Trigger shutdown with the output
-    if (state.resolve) {
-        state.resolve(formatted);
-    }
+    // Unregister the session
+    await sessionManager.unregisterSession(body.session_id);
 });
 
 export { router as submitRouter };

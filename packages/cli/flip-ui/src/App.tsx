@@ -35,11 +35,8 @@ function App() {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Enable real-time file sync via SSE
+  // Enable real-time file sync via polling
   useRealtimeSync()
-
-  // Get session ID from URL query parameter
-  const sessionId = new URLSearchParams(window.location.search).get('session') || ''
 
   // Load initial data and auto-select most recently modified file
   useEffect(() => {
@@ -85,7 +82,7 @@ function App() {
       if (stagedItems.length === 0) return
       setIsSubmitting(true)
       try {
-        await api.submit(sessionId, stagedItems)
+        await api.submit(stagedItems)
         window.close()
       } catch (err) {
         console.error('Failed to submit:', err)
@@ -103,7 +100,7 @@ function App() {
     if (stagedItems.length === 0) return
     setIsSubmitting(true)
     try {
-      await api.submit(sessionId, stagedItems)
+      await api.submit(stagedItems)
       window.close()
     } catch (err) {
       console.error('Failed to submit:', err)

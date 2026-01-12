@@ -2,8 +2,8 @@ import { Router, Request, Response } from 'express';
 import type { Router as IRouter } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { AppState } from '../server/Server.js';
 import { isFiltered } from '../constants/filters.js';
+import { SessionManager } from '../session/SessionManager.js';
 
 export interface FileNode {
     path: string;
@@ -113,23 +113,49 @@ function collectFlatFiles(
     return result;
 }
 
-// GET /api/files - Get file tree structure
+/**
+ * Get cwd from session_id query parameter
+ */
+function getCwdFromSession(req: Request, res: Response): string | null {
+    const sessionId = req.query.session_id as string;
+
+    if (!sessionId) {
+        res.status(400).json({ error: 'Missing session_id parameter' });
+        return null;
+    }
+
+    const sessionManager = req.app.locals.sessionManager as SessionManager;
+    const session = sessionManager.getSession(sessionId);
+
+    if (!session) {
+        res.status(404).json({ error: 'Session not found' });
+        return null;
+    }
+
+    return session.cwd;
+}
+
+// GET /api/files?session_id=xxx - Get file tree structure
 router.get('/', (req: Request, res: Response) => {
-    const state = req.app.locals.state as AppState;
-    const tree = buildFileTree(state.cwd, state.cwd, 10);
+    const cwd = getCwdFromSession(req, res);
+    if (!cwd) return;
+
+    const tree = buildFileTree(cwd, cwd, 10);
 
     const response: FilesResponse = {
-        root: state.cwd,
+        root: cwd,
         tree,
     };
 
     res.json(response);
 });
 
-// GET /api/files/flat - Get flat list of all files with mtime
+// GET /api/files/flat?session_id=xxx - Get flat list of all files with mtime
 router.get('/flat', (req: Request, res: Response) => {
-    const state = req.app.locals.state as AppState;
-    const result = collectFlatFiles(state.cwd, state.cwd, 10);
+    const cwd = getCwdFromSession(req, res);
+    if (!cwd) return;
+
+    const result = collectFlatFiles(cwd, cwd, 10);
 
     // Sort files by path for consistent display
     result.files.sort((a, b) => a.path.localeCompare(b.path));
