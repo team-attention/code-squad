@@ -10,8 +10,15 @@ import { copyToClipboard } from './output/clipboard.js';
 const DEFAULT_PORT = 51234;
 const MAX_PORT = 51240;
 
+// Quiet mode: no logs in coprocess mode to avoid iTerm error indicators
+let quietMode = false;
+
 // Use stderr for info messages (stdout goes to terminal input in coprocess mode)
-const log = (...args: unknown[]) => console.error(...args);
+const log = (...args: unknown[]) => {
+    if (!quietMode) {
+        console.error(...args);
+    }
+};
 
 function formatTime(): string {
     const now = new Date();
@@ -71,6 +78,12 @@ async function registerSession(port: number, sessionId: string, cwd: string): Pr
 }
 
 export async function runFlip(args: string[]): Promise<void> {
+    // Enable quiet mode when running as coprocess (stdin is not a TTY)
+    // This prevents iTerm from showing error indicators for info messages
+    if (!process.stdin.isTTY) {
+        quietMode = true;
+    }
+
     // Parse --session flag from anywhere in args
     let sessionId: string | undefined;
     const sessionIdx = args.indexOf('--session');
