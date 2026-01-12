@@ -92,8 +92,13 @@ export class Server {
     }
 }
 
-export async function findFreePort(preferred: number): Promise<number> {
-    return new Promise((resolve) => {
+export async function findFreePort(preferred: number, maxPort = 65535): Promise<number> {
+    return new Promise((resolve, reject) => {
+        if (preferred > maxPort) {
+            reject(new Error(`No available port found in range up to ${maxPort}`));
+            return;
+        }
+
         const server = net.createServer();
 
         server.listen(preferred, '127.0.0.1', () => {
@@ -103,8 +108,9 @@ export async function findFreePort(preferred: number): Promise<number> {
         });
 
         server.on('error', () => {
-            // Port in use, try next
-            findFreePort(preferred + 1).then(resolve);
+            server.close(() => {
+                findFreePort(preferred + 1, maxPort).then(resolve).catch(reject);
+            });
         });
     });
 }
