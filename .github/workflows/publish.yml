@@ -9,6 +9,7 @@ jobs:
   publish:
     if: github.repository == 'team-attention/code-squad'
     runs-on: ubuntu-latest
+    environment: publish
     steps:
       - uses: actions/checkout@v4
 
