@@ -1,0 +1,52 @@
+name: Publish Extension
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: publish
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build core
+        run: pnpm --filter @code-squad/core clean && pnpm --filter @code-squad/core build
+
+      - name: Build vscode extension
+        run: pnpm --filter code-squad build
+
+      - name: Type check
+        run: pnpm type-check
+
+      - name: Run tests
+        run: pnpm --filter @code-squad/core test && pnpm --filter code-squad test:unit
+
+      - name: Install vsce
+        run: npm install -g @vscode/vsce
+
+      - name: Publish to VS Code Marketplace
+        working-directory: packages/vscode
+        run: vsce publish -p ${{ secrets.VSCE_PAT }} --no-dependencies
+
+      - name: Install ovsx
+        run: npm install -g ovsx
+
+      - name: Publish to Open VSX (Cursor)
+        working-directory: packages/vscode
+        run: ovsx publish -p ${{ secrets.OVSX_PAT }} --no-dependencies
