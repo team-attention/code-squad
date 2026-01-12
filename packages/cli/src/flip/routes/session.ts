@@ -80,7 +80,6 @@ export function createSessionRouter(sessionManager: SessionManager): IRouter {
         res.json({
             session_id: session.id,
             cwd: session.cwd,
-            lastActivity: session.lastActivity,
         });
     });
 

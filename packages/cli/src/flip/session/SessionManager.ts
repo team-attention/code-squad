@@ -7,10 +7,10 @@ export interface Session {
     cwd: string;
     /** FileWatcher instance for this session */
     watcher: FileWatcher;
-    /** Last activity timestamp (ms since epoch) */
-    lastActivity: number;
     /** Changed files since last poll (for polling-based sync) */
     pendingChanges: PendingChanges;
+    /** Timeout timer for session expiration */
+    timeoutTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export interface PendingChanges {
@@ -31,35 +31,29 @@ const log = (...args: unknown[]) => console.error(...args);
 export class SessionManager {
     private sessions: Map<string, Session> = new Map();
     private options: SessionManagerOptions;
-    private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
     constructor(options: SessionManagerOptions) {
         this.options = options;
     }
 
     /**
-     * Start the session cleanup timer
+     * Start the session manager (no-op, kept for API compatibility)
      */
     start(): void {
-        // Check for timed out sessions every 5 seconds
-        this.cleanupInterval = setInterval(() => {
-            this.cleanupTimedOutSessions();
-        }, 5000);
+        // No longer uses periodic cleanup - each session has its own timeout
     }
 
     /**
      * Stop the session manager and clean up all sessions
      */
     async stop(): Promise<void> {
-        if (this.cleanupInterval) {
-            clearInterval(this.cleanupInterval);
-            this.cleanupInterval = null;
-        }
-
-        // Stop all watchers
-        const stopPromises = Array.from(this.sessions.values()).map(session =>
-            session.watcher.stop()
-        );
+        // Clear all session timeouts and stop watchers
+        const stopPromises = Array.from(this.sessions.values()).map(session => {
+            if (session.timeoutTimer) {
+                clearTimeout(session.timeoutTimer);
+            }
+            return session.watcher.stop();
+        });
         await Promise.all(stopPromises);
         this.sessions.clear();
     }
@@ -71,8 +65,8 @@ export class SessionManager {
         const existing = this.sessions.get(sessionId);
 
         if (existing) {
-            // Update activity timestamp
-            existing.lastActivity = Date.now();
+            // Reset timeout on activity
+            this.resetSessionTimeout(sessionId);
 
             // If cwd changed, need to restart watcher
             if (existing.cwd !== cwd) {
@@ -91,43 +85,45 @@ export class SessionManager {
             id: sessionId,
             cwd,
             watcher,
-            lastActivity: Date.now(),
             pendingChanges: this.createEmptyPendingChanges(),
+            timeoutTimer: null,
         };
 
         this.sessions.set(sessionId, session);
+        this.resetSessionTimeout(sessionId);
         log(`[SessionManager] Session registered: ${sessionId} (cwd: ${cwd})`);
 
         return session;
     }
 
     /**
-     * Get a session by ID and update activity
+     * Get a session by ID and reset timeout
      */
     getSession(sessionId: string): Session | undefined {
         const session = this.sessions.get(sessionId);
         if (session) {
-            session.lastActivity = Date.now();
+            this.resetSessionTimeout(sessionId);
         }
         return session;
     }
 
     /**
-     * Touch session to update activity timestamp (called on every API request)
+     * Touch session to reset timeout (called on every API request)
      */
     touchSession(sessionId: string): void {
-        const session = this.sessions.get(sessionId);
-        if (session) {
-            session.lastActivity = Date.now();
-        }
+        this.resetSessionTimeout(sessionId);
     }
 
     /**
-     * Unregister a session (e.g., on cancel/submit)
+     * Unregister a session (e.g., on cancel/submit/timeout)
      */
     async unregisterSession(sessionId: string): Promise<void> {
         const session = this.sessions.get(sessionId);
         if (session) {
+            // Clear timeout timer
+            if (session.timeoutTimer) {
+                clearTimeout(session.timeoutTimer);
+            }
             await session.watcher.stop();
             this.sessions.delete(sessionId);
             log(`[SessionManager] Session unregistered: ${sessionId}`);
@@ -204,19 +200,25 @@ export class SessionManager {
         };
     }
 
-    private cleanupTimedOutSessions(): void {
-        const now = Date.now();
-        const timedOut: string[] = [];
+    /**
+     * Reset the timeout timer for a session.
+     * Called on every activity (register, poll, etc.)
+     */
+    private resetSessionTimeout(sessionId: string): void {
+        const session = this.sessions.get(sessionId);
+        if (!session) return;
 
-        for (const [sessionId, session] of this.sessions) {
-            if (now - session.lastActivity > this.options.sessionTimeoutMs) {
-                timedOut.push(sessionId);
-            }
+        // Clear existing timeout
+        if (session.timeoutTimer) {
+            clearTimeout(session.timeoutTimer);
         }
 
-        for (const sessionId of timedOut) {
+        // Set new timeout
+        session.timeoutTimer = setTimeout(() => {
             log(`[SessionManager] Session timed out: ${sessionId}`);
-            this.unregisterSession(sessionId);
-        }
+            this.unregisterSession(sessionId).catch(error => {
+                log(`[SessionManager] Error during session unregister for ${sessionId}:`, error);
+            });
+        }, this.options.sessionTimeoutMs);
     }
 }
