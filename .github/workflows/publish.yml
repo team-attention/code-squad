@@ -34,13 +34,17 @@ jobs:
       - name: Install vsce
         run: npm install -g @vscode/vsce
 
+      - name: Package Extension
+        working-directory: packages/vscode
+        run: vsce package --no-dependencies
+
       - name: Publish to VS Code Marketplace
         working-directory: packages/vscode
-        run: vsce publish -p ${{ secrets.VSCE_PAT }} --no-dependencies
+        run: vsce publish --packagePath *.vsix -p ${{ secrets.VSCE_PAT }}
 
       - name: Install ovsx
         run: npm install -g ovsx
 
       - name: Publish to Open VSX (Cursor)
         working-directory: packages/vscode
-        run: ovsx publish -p ${{ secrets.OVSX_PAT }} --no-dependencies
+        run: ovsx publish *.vsix -p ${{ secrets.OVSX_PAT }}
