@@ -1,0 +1,69 @@
+name: Mirror to Public
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*', 'cli-v*']
+  workflow_dispatch:
+
+jobs:
+  mirror-code:
+    if: github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout private
+        uses: actions/checkout@v4
+        with:
+          path: private
+
+      - name: Checkout public
+        uses: actions/checkout@v4
+        with:
+          repository: team-attention/code-squad
+          token: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          path: public
+
+      - name: Sync files (exclude docs/specs)
+        run: |
+          # public 기존 파일 정리 (.git 제외)
+          cd public
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          cd ..
+
+          # private → public 복사 (specs, docs_deprecated, .git, .github 제외)
+          rsync -av \
+            --exclude='specs' \
+            --exclude='docs_deprecated' \
+            --exclude='.git' \
+            --exclude='.github' \
+            private/ public/
+
+      - name: Commit and push
+        run: |
+          cd public
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+
+          if git diff --staged --quiet; then
+            echo "No changes to sync"
+          else
+            git commit -m "Sync from private repo"
+            git push
+          fi
+
+  mirror-tag:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout private
+        uses: actions/checkout@v4
+
+      - name: Push tag to public
+        env:
+          PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          git remote add public https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/team-attention/code-squad.git
+          git push public ${{ github.ref_name }} --force
