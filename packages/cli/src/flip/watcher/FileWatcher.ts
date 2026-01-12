@@ -53,7 +53,15 @@ export class FileWatcher {
             .on('change', (filePath) => this.handleFileEvent(filePath, 'change'))
             .on('addDir', (filePath) => this.handleDirEvent(filePath, 'addDir'))
             .on('unlinkDir', (filePath) => this.handleDirEvent(filePath, 'unlinkDir'))
-            .on('error', (error) => console.error('Watcher error:', error));
+            .on('error', (error) => {
+                const code = (error as NodeJS.ErrnoException).code;
+                if (code === 'ENFILE' || code === 'EMFILE') {
+                    console.error('File descriptor limit reached. Disabling file watcher.');
+                    this.stop();
+                } else {
+                    console.error('Watcher error:', error);
+                }
+            });
     }
 
     async stop(): Promise<void> {
