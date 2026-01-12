@@ -2,6 +2,8 @@ name: Publish CLI
 
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [publish-cli]
 
 jobs:
   publish:
