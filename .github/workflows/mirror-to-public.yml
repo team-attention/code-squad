@@ -37,7 +37,7 @@ jobs:
             --exclude='docs' \
             --exclude='CLAUDE.md' \
             --exclude='.git' \
-            --exclude='.github' \
+            --exclude='.github/workflows/mirror-to-public.yml' \
             private/ public/
 
       - name: Commit and push
