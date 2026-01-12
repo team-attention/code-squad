@@ -86,7 +86,7 @@ export class Server {
             };
 
             server.listen(this.port, '127.0.0.1', () => {
-                console.log(`Server running at http://localhost:${this.port}`);
+                console.error(`Server running at http://localhost:${this.port}`);
             });
         });
     }

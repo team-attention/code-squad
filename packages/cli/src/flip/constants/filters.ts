@@ -24,6 +24,26 @@ export const FILTERED_PATTERNS = new Set([
     '__pycache__',
     '.pytest_cache',
     'target',
+    // macOS system folders (prevent FD exhaustion when run from home dir)
+    'Library',
+    'Applications',
+    'Pictures',
+    'Movies',
+    'Music',
+    'Downloads',
+    '.Trash',
+    '.local',
+    '.npm',
+    '.nvm',
+    '.cargo',
+    '.rustup',
+    '.volta',
+    '.pyenv',
+    '.rbenv',
+    // Linux system folders
+    '.config',
+    '.mozilla',
+    '.thunderbird',
 ]);
 
 export function isFiltered(name: string): boolean {

@@ -54,9 +54,9 @@ router.post('/', async (req: Request, res: Response) => {
         clipboardSuccess = true;
     } catch (e) {
         console.error('Failed to copy to clipboard:', e);
-        console.log('\n--- Output (copy manually) ---');
-        console.log(formatted);
-        console.log('--- End of output ---\n');
+        console.error('\n--- Output (copy manually) ---');
+        console.error(formatted);
+        console.error('--- End of output ---\n');
     }
 
     // Schedule paste only if clipboard copy succeeded

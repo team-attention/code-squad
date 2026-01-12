@@ -8,6 +8,9 @@ import { copyToClipboard } from './output/clipboard.js';
 
 const DEFAULT_PORT = 51234;
 
+// Use stderr for info messages (stdout goes to terminal input in coprocess mode)
+const log = (...args: unknown[]) => console.error(...args);
+
 function formatTime(): string {
     const now = new Date();
     const hours = String(now.getHours()).padStart(2, '0');
@@ -71,11 +74,11 @@ export async function runFlip(args: string[]): Promise<void> {
         case 'serve': {
             // Daemon mode: start server, keep running
             const port = await findFreePort(DEFAULT_PORT);
-            console.log(`Server running at http://localhost:${port}`);
-            console.log('Press Ctrl+C to stop');
-            console.log('');
-            console.log('To open browser, run: csq flip open');
-            console.log(`Or use hotkey to open: open http://localhost:${port}`);
+            log(`Server running at http://localhost:${port}`);
+            log('Press Ctrl+C to stop');
+            log('');
+            log('To open browser, run: csq flip open');
+            log(`Or use hotkey to open: open http://localhost:${port}`);
 
             // Run server in loop (restarts after each submit/cancel)
             while (true) {
@@ -83,23 +86,23 @@ export async function runFlip(args: string[]): Promise<void> {
                 const result = await server.run();
 
                 if (result) {
-                    console.log(`[${formatTime()}] Submitted ${result.length} characters`);
+                    log(`[${formatTime()}] Submitted ${result.length} characters`);
                 } else {
-                    console.log(`[${formatTime()}] Cancelled`);
+                    log(`[${formatTime()}] Cancelled`);
                 }
-                console.log(`[${formatTime()}] Ready for next session...`);
+                log(`[${formatTime()}] Ready for next session...`);
             }
         }
 
         case 'open': {
             // Just open browser to existing server
             const url = `http://localhost:${DEFAULT_PORT}`;
-            console.log(`Opening ${url} in browser...`);
+            log(`Opening ${url} in browser...`);
             try {
                 await open(url);
             } catch (e) {
-                console.error('Failed to open browser:', e);
-                console.error('Is the server running? Start with: csq flip serve');
+                log('Failed to open browser:', e);
+                log('Is the server running? Start with: csq flip serve');
             }
             break;
         }
@@ -112,21 +115,21 @@ export async function runFlip(args: string[]): Promise<void> {
                 ? `http://localhost:${port}?session=${sessionId}`
                 : `http://localhost:${port}`;
 
-            console.log(`Opening ${url} in browser...`);
+            log(`Opening ${url} in browser...`);
             try {
                 await open(url);
             } catch (e) {
-                console.error('Failed to open browser:', e);
-                console.log(`Please open ${url} manually`);
+                log('Failed to open browser:', e);
+                log(`Please open ${url} manually`);
             }
 
             const server = new Server(cwd, port);
             const result = await server.run();
 
             if (result) {
-                console.log(`\nSubmitted ${result.length} characters`);
+                log(`\nSubmitted ${result.length} characters`);
             } else {
-                console.log('\nCancelled');
+                log('\nCancelled');
             }
             break;
         }

@@ -29,16 +29,18 @@ export class FileWatcher {
     }
 
     start(): void {
-        const ignoredPatterns = Array.from(FILTERED_PATTERNS).map(pattern => {
-            // .git은 감시하되 내부 변경은 git-changed 이벤트로 처리
-            if (pattern === '.git') {
-                return undefined;
-            }
-            return `**/${pattern}/**`;
-        }).filter(Boolean) as string[];
+        // Use function-based ignore to prevent chokidar from even opening filtered directories
+        const shouldIgnore = (filePath: string): boolean => {
+            const relativePath = path.relative(this.cwd, filePath);
+            const segments = relativePath.split(path.sep);
+            // Ignore if any path segment matches filtered patterns (except .git)
+            return segments.some(segment =>
+                segment !== '.git' && FILTERED_PATTERNS.has(segment)
+            );
+        };
 
         this.watcher = chokidar.watch(this.cwd, {
-            ignored: ignoredPatterns,
+            ignored: shouldIgnore,
             persistent: true,
             ignoreInitial: true,
             awaitWriteFinish: {

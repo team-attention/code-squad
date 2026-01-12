@@ -12,8 +12,7 @@ export function createStaticRouter(): IRouter {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
 
-    // First, check for the bundled path. This is more robust than checking the filename.
-    // - Bundled: dist/flip-ui/dist
+    // Bundled: __dirname is dist/, flip-ui is at dist/flip-ui/dist
     let distPath = path.resolve(__dirname, 'flip-ui/dist');
 
     // If the bundled path doesn't exist, fall back to the unbundled (development) path.
