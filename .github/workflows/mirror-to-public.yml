@@ -24,17 +24,18 @@ jobs:
           token: ${{ secrets.PUBLIC_REPO_TOKEN }}
           path: public
 
-      - name: Sync files (exclude docs/specs)
+      - name: Sync files (exclude private-only)
         run: |
           # public 기존 파일 정리 (.git 제외)
           cd public
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           cd ..
 
-          # private → public 복사 (specs, docs_deprecated, .git, .github 제외)
+          # private → public 복사 (private-only 파일 제외)
           rsync -av \
             --exclude='specs' \
-            --exclude='docs_deprecated' \
+            --exclude='docs' \
+            --exclude='CLAUDE.md' \
             --exclude='.git' \
             --exclude='.github' \
             private/ public/
