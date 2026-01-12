@@ -1,9 +1,9 @@
 name: Publish CLI
 
 on:
+  push:
+    tags: ['cli-v*']
   workflow_dispatch:
-  repository_dispatch:
-    types: [publish-cli]
 
 jobs:
   publish:
