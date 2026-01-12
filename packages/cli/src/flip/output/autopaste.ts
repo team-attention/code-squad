@@ -78,15 +78,23 @@ async function pasteToOriginalSession(sessionId: string): Promise<void> {
         // Write script to temp file and execute via detached process
         const tmpScript = path.join(os.tmpdir(), `flip-paste-${Date.now()}.scpt`);
         fs.writeFileSync(tmpScript, script);
+
+        const cleanupScript = () => {
+            try { fs.unlinkSync(tmpScript); } catch { /* ignore */ }
+        };
+
         const child = spawn('osascript', [tmpScript], {
             detached: true,
             stdio: 'ignore',
         });
+
+        // Cleanup on process exit or error
+        child.on('exit', cleanupScript);
+        child.on('error', cleanupScript);
         child.unref();
-        // Schedule cleanup
-        setTimeout(() => {
-            try { fs.unlinkSync(tmpScript); } catch {}
-        }, 5000);
+
+        // Fallback cleanup in case events don't fire (safety net)
+        setTimeout(cleanupScript, 10000);
     } catch (e) {
         console.error('Failed to paste to iTerm:', e);
     }
