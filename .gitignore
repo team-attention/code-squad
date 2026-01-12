@@ -27,6 +27,7 @@ Thumbs.db
 
 # Claude Code settings (personal config)
 .claude/
+!.claude/CLAUDE.md
 docs_deprecated/
 
 # Logs
