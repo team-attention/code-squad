@@ -108,8 +108,9 @@ export async function findFreePort(preferred: number, maxPort = 65535): Promise<
         });
 
         server.on('error', () => {
-            server.close();
-            findFreePort(preferred + 1, maxPort).then(resolve).catch(reject);
+            server.close(() => {
+                findFreePort(preferred + 1, maxPort).then(resolve).catch(reject);
+            });
         });
     });
 }

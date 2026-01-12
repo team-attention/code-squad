@@ -19,6 +19,7 @@ export async function copyToClipboard(text: string): Promise<void> {
             stdio: 'ignore',
         });
         child.on('error', cleanupTmpFile);
+        child.on('exit', cleanupTmpFile);
         child.unref();
     };
 
@@ -31,11 +32,20 @@ export async function copyToClipboard(text: string): Promise<void> {
             throw e;
         }
     } else if (process.platform === 'linux') {
-        fs.writeFileSync(tmpFile, text);
-        // Try xclip first, shell will handle if command not found
-        spawnWithCleanup('sh', ['-c', `(xclip -selection clipboard < "${tmpFile}" || xsel --clipboard --input < "${tmpFile}") && rm "${tmpFile}"`]);
+        try {
+            fs.writeFileSync(tmpFile, text);
+            spawnWithCleanup('sh', ['-c', `(xclip -selection clipboard < "${tmpFile}" || xsel --clipboard --input < "${tmpFile}") && rm "${tmpFile}"`]);
+        } catch (e) {
+            console.log(`Output saved to: ${tmpFile}`);
+            throw e;
+        }
     } else if (process.platform === 'win32') {
-        fs.writeFileSync(tmpFile, text);
-        spawnWithCleanup('cmd', ['/c', `type "${tmpFile}" | clip && del "${tmpFile}"`]);
+        try {
+            fs.writeFileSync(tmpFile, text);
+            spawnWithCleanup('cmd', ['/c', `type "${tmpFile}" | clip && del "${tmpFile}"`]);
+        } catch (e) {
+            console.log(`Output saved to: ${tmpFile}`);
+            throw e;
+        }
     }
 }
