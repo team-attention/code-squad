@@ -26,7 +26,7 @@ jobs:
         run: pnpm install
 
       - name: Build core
-        run: pnpm --filter @code-squad/core build
+        run: pnpm --filter @code-squad/core clean && pnpm --filter @code-squad/core build
 
       - name: Build vscode extension
         run: pnpm --filter code-squad build

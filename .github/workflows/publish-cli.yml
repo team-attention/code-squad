@@ -27,7 +27,7 @@ jobs:
         run: pnpm install
 
       - name: Build core
-        run: pnpm --filter @code-squad/core build
+        run: pnpm --filter @code-squad/core clean && pnpm --filter @code-squad/core build
 
       - name: Build CLI
         run: pnpm --filter code-squad-cli build
