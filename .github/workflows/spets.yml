@@ -1,0 +1,190 @@
+# Spets GitHub Action
+# Handles workflow start from Issue creation and commands from comments
+
+name: Spets Workflow
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  # Start workflow when a spets Issue is created
+  start-workflow:
+    if: github.event.action == 'opened' && contains(github.event.issue.labels.*.name, 'spets')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Parse Issue body
+        id: parse
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          # Parse task description
+          TASK=$(echo "$ISSUE_BODY" | sed -n '/### Task Description/,/###/{/###/!p;}' | sed '/^$/d' | head -1)
+          echo "task=$TASK" >> $GITHUB_OUTPUT
+
+          # Parse branch name (optional)
+          BRANCH=$(echo "$ISSUE_BODY" | sed -n '/### Branch Name/,/###/{/###/!p;}' | sed '/^$/d' | head -1)
+          if [ -z "$BRANCH" ]; then
+            BRANCH="spets/$ISSUE_NUMBER"
+          fi
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Create and checkout branch
+        run: |
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git checkout -b ${{ steps.parse.outputs.branch }}
+          git push -u origin ${{ steps.parse.outputs.branch }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache Claude Code & Spets
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/lib/node_modules/@anthropic-ai/claude-code
+            /usr/local/lib/node_modules/spets
+          key: spets-tools-${{ runner.os }}-v1
+
+      - name: Install Claude Code & Spets
+        run: npm install -g @anthropic-ai/claude-code spets
+
+      - name: Start Spets workflow
+        run: |
+          spets start "$TASK" --github --issue ${{ github.event.issue.number }}
+        env:
+          TASK: ${{ steps.parse.outputs.task }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git add -A
+          git diff --staged --quiet || git commit -m "Spets: Start workflow for #${{ github.event.issue.number }}"
+          git push
+
+  # Handle commands from Issue/PR comments
+  handle-command:
+    if: |
+      github.event.action == 'created' && (
+        contains(github.event.comment.body, '/approve') ||
+        contains(github.event.comment.body, '/revise') ||
+        contains(github.event.comment.body, '/reject') ||
+        contains(github.event.comment.body, '/answer')
+      )
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Find branch from Issue or PR
+        id: branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if this is a PR (has pull_request field)
+          PR_BRANCH=$(gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }} --jq '.pull_request.url // empty' 2>/dev/null)
+
+          if [ -n "$PR_BRANCH" ]; then
+            # It's a PR - get head branch directly
+            BRANCH=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.issue.number }} --jq '.head.ref')
+            echo "Found PR head branch: $BRANCH"
+          else
+            # It's an Issue - try to parse branch name from body
+            ISSUE_BODY=$(gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }} --jq '.body')
+            CUSTOM_BRANCH=$(echo "$ISSUE_BODY" | sed -n '/### Branch Name/,/###/{/###/!p;}' | sed '/^$/d' | head -1)
+
+            if [ -n "$CUSTOM_BRANCH" ]; then
+              BRANCH="$CUSTOM_BRANCH"
+            else
+              BRANCH="spets/${{ github.event.issue.number }}"
+            fi
+          fi
+
+          echo "Checking for branch: $BRANCH"
+
+          # Check if branch exists on remote using gh api
+          if gh api "repos/${{ github.repository }}/branches/$BRANCH" --silent 2>/dev/null; then
+            echo "name=$BRANCH" >> $GITHUB_OUTPUT
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Branch $BRANCH found!"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "expected=$BRANCH" >> $GITHUB_OUTPUT
+            echo "::error::Branch $BRANCH not found. Start workflow first by creating an Issue with 'spets' label."
+          fi
+
+      - name: Post error comment
+        if: steps.branch.outputs.exists == 'false'
+        run: |
+          gh issue comment ${{ github.event.issue.number }} \
+            -R "${{ github.repository }}" \
+            --body "❌ **Spets Error**: Branch \`${{ steps.branch.outputs.expected }}\` not found.
+
+          Please make sure the workflow was started properly. You can:
+          1. Add the \`spets\` label to this issue to trigger the start workflow
+          2. Or manually create the branch and run \`spets start\`"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Exit if branch not found
+        if: steps.branch.outputs.exists == 'false'
+        run: exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.branch.outputs.name }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache Claude Code & Spets
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/lib/node_modules/@anthropic-ai/claude-code
+            /usr/local/lib/node_modules/spets
+          key: spets-tools-${{ runner.os }}-v1
+
+      - name: Install Claude Code & Spets
+        run: npm install -g @anthropic-ai/claude-code spets
+
+      - name: Run Spets command
+        run: |
+          spets github --issue ${{ github.event.issue.number }} --comment "$COMMENT"
+        env:
+          COMMENT: ${{ github.event.comment.body }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git add -A
+          git diff --staged --quiet || git commit -m "Spets: Update from #${{ github.event.issue.number }}"
+          git push

@@ -1,0 +1,20 @@
+name: Spets Task
+description: Start a Spets workflow
+labels: ["spets"]
+body:
+  - type: input
+    id: task
+    attributes:
+      label: Task Description
+      description: What do you want to accomplish?
+      placeholder: "Add user authentication"
+    validations:
+      required: true
+  - type: input
+    id: branch
+    attributes:
+      label: Branch Name
+      description: Leave empty to auto-generate (spets/<issue-number>)
+      placeholder: "feature/my-feature"
+    validations:
+      required: false
