@@ -301,7 +301,11 @@ async function createWorktreeCommand(workspaceRoot: string, args: string[]) {
             await openNewTerminal(worktreePath);
         } else if (process.platform === 'darwin') {
             // AppleScript로 현재 터미널에 cd 명령어 전송 (macOS)
-            await cdInCurrentTerminal(worktreePath);
+            const success = await cdInCurrentTerminal(worktreePath);
+            if (!success) {
+                console.log(chalk.dim('\nNote: Auto-cd may require shell function setup.'));
+                console.log(chalk.dim('Run: eval "$(csq --init)"'));
+            }
         } else {
             // 셸 함수가 마지막 줄을 보고 cd 실행 (macOS 외)
             console.log(worktreePath);
@@ -446,7 +450,58 @@ async function cdInCurrentTerminal(targetPath: string): Promise<boolean> {
     const { exec } = await import('child_process');
     const escapedPath = targetPath.replace(/'/g, "'\\''");
 
-    // iTerm2 확인
+    // 환경 변수로 터미널 타입 확인 (더 신뢰할 수 있음)
+    const termProgram = process.env.TERM_PROGRAM;
+
+    // Cursor, VS Code, Claude Code 등의 임베디드 터미널은 AppleScript를 지원하지 않음
+    // TERM_PROGRAM이 iTerm.app이어도 실제 iTerm이 실행 중이 아닐 수 있음 (에뮬레이션)
+    if (termProgram === 'vscode' || termProgram?.includes('cursor')) {
+        // 셸 함수 의존 방식으로 폴백
+        console.log(targetPath);
+        return true;
+    }
+
+    // iTerm (iTerm2 포함) 처리 - 실제 실행 중인지 확인
+    if (termProgram === 'iTerm.app') {
+        const script = `
+tell application "iTerm"
+    tell current session of current window
+        write text "cd '${escapedPath}'"
+    end tell
+end tell`;
+        return new Promise((resolve) => {
+            exec(`osascript -e '${script}'`, (error, stdout, stderr) => {
+                if (error) {
+                    // AppleScript 실패 = iTerm이 실행 중이 아니거나 임베디드 터미널
+                    // 셸 함수로 폴백
+                    console.log(targetPath);
+                    resolve(true);
+                    return;
+                }
+                resolve(true);
+            });
+        });
+    }
+
+    // Terminal.app
+    if (termProgram === 'Apple_Terminal') {
+        const terminalScript = `
+tell application "Terminal"
+    do script "cd '${escapedPath}'" in front window
+end tell`;
+        return new Promise((resolve) => {
+            exec(`osascript -e '${terminalScript}'`, (error, stdout, stderr) => {
+                if (error) {
+                    console.log(targetPath);
+                    resolve(true);
+                    return;
+                }
+                resolve(true);
+            });
+        });
+    }
+
+    // 알 수 없는 터미널 - mdfind로 폴백
     const hasIterm = await new Promise<boolean>((resolve) => {
         exec('mdfind "kMDItemCFBundleIdentifier == com.googlecode.iterm2"', (error, stdout) => {
             resolve(!error && stdout.trim().length > 0);
@@ -454,7 +509,6 @@ async function cdInCurrentTerminal(targetPath: string): Promise<boolean> {
     });
 
     if (hasIterm) {
-        // iTerm2 - 현재 세션에 cd 명령어 전송
         const script = `
 tell application "iTerm2"
     tell current session of current window
@@ -463,21 +517,17 @@ tell application "iTerm2"
 end tell`;
         return new Promise((resolve) => {
             exec(`osascript -e '${script}'`, (error) => {
-                resolve(!error);
+                if (error) {
+                    console.log(targetPath);
+                }
+                resolve(true);
             });
         });
     }
 
-    // Terminal.app
-    const terminalScript = `
-tell application "Terminal"
-    do script "cd '${escapedPath}'" in front window
-end tell`;
-    return new Promise((resolve) => {
-        exec(`osascript -e '${terminalScript}'`, (error) => {
-            resolve(!error);
-        });
-    });
+    // 모든 방법 실패 - 셸 함수 의존
+    console.log(targetPath);
+    return true;
 }
 
 /**
