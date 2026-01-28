@@ -20,9 +20,9 @@ https://github.com/user-attachments/assets/cd1c6eb1-21fe-4179-91b8-a1abd920ea41
 
 | | **VSCode Extension** | **CLI** |
 |---|---|---|
-| **What** | Multi-agent session manager | Visual prompt composer |
+| **What** | Multi-agent session manager | Worktree manager + file viewer |
 | **Install** | Search "Code Squad" in Extensions | `npm install -g code-squad-cli` |
-| **Use** | Manage threads, review diffs, inline feedback | `csq flip` to open UI |
+| **Use** | Manage threads, review diffs, inline feedback | `csq flip` — opens browser UI (or setup iTerm hotkey) |
 
 ---
 
@@ -67,7 +67,7 @@ Or download from [Open VSX](https://open-vsx.org/extension/JakePark/code-squad)
 
 ## CLI
 
-Visual prompt composer. Open a browser UI to build prompts with file context.
+Worktree helper. Create worktrees, browse files. Opens a browser UI via command or iTerm hotkey.
 
 ### Install
 
@@ -77,6 +77,8 @@ npm install -g code-squad-cli
 
 ### Usage
 
+Run the command directly, or set up an iTerm hotkey for quick access.
+
 ```bash
 csq flip              # Open UI for current directory
 csq flip /path/to/dir # Open UI for specific directory
@@ -85,7 +87,7 @@ csq flip setup        # Setup iTerm2 hotkey
 
 ### iTerm2 Hotkey (macOS)
 
-Run `csq flip setup`, then:
+Optional but recommended. Run `csq flip setup`, then:
 
 1. iTerm2 → Settings → Keys → Key Bindings
 2. Add new binding (e.g., `⌘⇧F`)
