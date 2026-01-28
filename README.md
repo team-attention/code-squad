@@ -16,106 +16,97 @@ https://github.com/user-attachments/assets/cd1c6eb1-21fe-4179-91b8-a1abd920ea41
 
 <br />
 
-> **Note**: This project was originally called "Sidecar". See [legacy documentation](SIDECAR_README.md).
+## Two Ways to Use
 
-## Why Code Squad?
-
-Running multiple AI agents in parallel is powerful — but switching between terminals, tracking changes across workspaces, and losing context is exhausting.
-
-- Juggling multiple terminals breaks your focus
-- Hard to see what changed across parallel sessions
-- Context switching kills the flow
-
-**Code Squad makes multi-agent coding immersive.**
-
-Manage all your AI sessions in one place. See every change. Give feedback inline. Stay in the zone while your agents work in parallel.
+| | **VSCode Extension** | **CLI** |
+|---|---|---|
+| **What** | Multi-agent session manager | Visual prompt composer |
+| **Install** | Search "Code Squad" in Extensions | `npm install -g code-squad-cli` |
+| **Use** | Manage threads, review diffs, inline feedback | `csq flip` to open UI |
 
 ---
 
-## How It Works
+## VSCode Extension
 
-### 1. Start a Thread
+Manage AI agents in parallel. Isolated worktrees. Inline feedback. All in one sidebar.
 
-Open **Thread Management** in the sidebar and click `+`.
-
-- Enter a **task name**
-- Choose **isolation mode**:
-  - `Local` - Work in current branch
-  - `Worktree` - Create isolated worktree (recommended for parallel work)
-
-### 2. Run Your AI Agent
-
-A terminal opens. Run your preferred AI agent:
-
-```bash
-claude    # Claude Code
-codex     # OpenAI Codex CLI
-gemini    # Gemini CLI
-opencode  # OpenCode
-```
-
-### 3. Review Changes
-
-When AI modifies files, **Code Squad panel** shows all changes:
-
-- File-by-file Diff view
-- Scope view (grouped by function/class)
-
-### 4. Give Inline Feedback
-
-Select lines that need changes. Write a comment. Hit **Submit** — it goes directly to the AI terminal.
-
-```
-"Add error handling to this function"
-    ↓
-AI starts fixing immediately
-```
-
----
-
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| **Thread Management** | Run multiple AI agents in isolated workspaces |
-| **Isolation Modes** | `Local` (current branch) or `Worktree` (isolated directory) |
-| **Attach to Worktree** | Connect Code Squad to existing git worktrees |
-| **Auto-Detect** | Automatically detects `claude`, `codex`, `gemini`, `opencode` |
-| **Diff View** | GitHub-style change comparison |
-| **Inline Comments** | Select lines → Comment → Send to AI |
-| **Scope View** | Changes grouped by function/class |
-| **Status Tracking** | Real-time AI status with color indicators |
-
-### Thread Actions
-
-Each thread in the sidebar has quick actions:
-
-| Action | Description |
-|--------|-------------|
-| **Terminal** | Open/focus the thread's terminal |
-| **Open in Editor** | Open worktree folder in new VS Code window |
-| **Cleanup** | Delete thread and optionally remove worktree |
-
-### Status Indicators
-
-| Status | Color | Description |
-|--------|-------|-------------|
-| **Working** | 🟢 Green | AI is actively processing (pulsing) |
-| **Waiting** | 🟡 Yellow | AI waiting for confirmation (y/n) |
-| **Idle** | 🔵 Blue | AI ready for input |
-| **Inactive** | ⚪ Gray | No AI session running |
-
----
-
-## Installation
-
-**VS Code / Cursor Extension**
+### Install
 
 1. Open Extensions (`Cmd+Shift+X`)
 2. Search "Code Squad"
 3. Click Install
 
 Or download from [Open VSX](https://open-vsx.org/extension/JakePark/code-squad)
+
+### Quick Start
+
+1. **Start a Thread** — Click `+` in sidebar. Pick `Local` or `Worktree` isolation.
+2. **Run AI** — `claude`, `codex`, `gemini`, or `opencode`
+3. **Review** — See all changes in the panel
+4. **Feedback** — Select lines, comment, submit directly to AI
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Thread Management** | Multiple AI agents in isolated workspaces |
+| **Worktree Isolation** | Each thread gets its own git worktree |
+| **Diff View** | File-by-file or grouped by function/class |
+| **Inline Comments** | Select → Comment → Send to AI |
+| **Auto-Detect** | Detects `claude`, `codex`, `gemini`, `opencode` |
+
+### Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `codeSquad.autoDetect` | `true` | Auto-detect AI tools |
+| `codeSquad.autoShowPanel` | `true` | Open panel when AI detected |
+| `codeSquad.worktreeCopyPatterns` | `[]` | Files to copy to worktree (e.g., `.env*`) |
+
+---
+
+## CLI
+
+Visual prompt composer. Open a browser UI to build prompts with file context.
+
+### Install
+
+```bash
+npm install -g code-squad-cli
+```
+
+### Usage
+
+```bash
+csq flip              # Open UI for current directory
+csq flip /path/to/dir # Open UI for specific directory
+csq flip setup        # Setup iTerm2 hotkey
+```
+
+### iTerm2 Hotkey (macOS)
+
+Run `csq flip setup`, then:
+
+1. iTerm2 → Settings → Keys → Key Bindings
+2. Add new binding (e.g., `⌘⇧F`)
+3. Action: `Run Coprocess`
+4. Command: paste path from clipboard
+
+Works even while AI tools are running in the terminal.
+
+### Config
+
+Create `~/.code-squad/config.json`:
+
+```json
+{
+  "projects": {
+    "/path/to/project": {
+      "worktreeCopyPatterns": [".env*", "config/**"]
+    }
+  }
+}
+```
 
 ---
 
@@ -127,74 +118,6 @@ Or download from [Open VSX](https://open-vsx.org/extension/JakePark/code-squad)
 | [Codex CLI](https://github.com/openai/codex) | `codex` |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `gemini` |
 | [OpenCode](https://github.com/sst/opencode) | `opencode` |
-
----
-
-## Settings
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `codeSquad.autoDetect` | `true` | Auto-detect AI tools in terminal |
-| `codeSquad.autoShowPanel` | `true` | Open panel when AI detected |
-| `codeSquad.includeFiles` | `[]` | Glob patterns for gitignored files to track |
-| `codeSquad.worktreeCopyPatterns` | `[]` | Files to copy when creating worktree (e.g., `.env*`, `config/**`) |
-
-### CLI Global Configuration
-
-Create `~/.code-squad/config.json` to configure per-project settings for CLI:
-
-```json
-{
-  "projects": {
-    "/path/to/project-a": {
-      "worktreeCopyPatterns": [".env*", "config/**"]
-    },
-    "/path/to/project-b": {
-      "worktreeCopyPatterns": [".env"]
-    }
-  }
-}
-```
-
----
-
-## CLI
-
-Code Squad includes a CLI tool `csq` with the `flip` command for visual prompt composition.
-
-### Installation
-
-```bash
-npm install -g code-squad-cli
-```
-
-### Usage
-
-```bash
-csq flip              # Open browser UI in current directory
-csq flip /path/to/dir # Open browser UI for specific directory
-csq flip setup        # Setup iTerm2 hotkey
-```
-
-### iTerm2 Hotkey Setup (macOS)
-
-Run `csq flip setup` and follow the instructions:
-
-1. **iTerm2 → Settings → Keys → Key Bindings**
-2. Click **+** to add new binding
-3. **Keyboard Shortcut**: Choose your preferred shortcut (e.g., `⌘⇧F`)
-4. **Action**: Select `Run Coprocess`
-5. **Command**: Paste the path from clipboard (e.g., `~/.config/csq/flip-hotkey.sh`)
-
-Now press the hotkey anywhere in iTerm2 to open the flip UI for your current directory.
-
-**Note**: Works even while Claude Code or other AI tools are running in the terminal.
-
----
-
-## Requirements
-
-- VS Code 1.93.0+ or Cursor
 
 ---
 
