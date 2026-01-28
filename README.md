@@ -20,9 +20,9 @@ https://github.com/user-attachments/assets/cd1c6eb1-21fe-4179-91b8-a1abd920ea41
 
 | | **VSCode Extension** | **CLI** |
 |---|---|---|
-| **What** | Multi-agent session manager | Worktree manager + file viewer |
+| **What** | Multi-agent session manager | Worktree manager |
 | **Install** | Search "Code Squad" in Extensions | `npm install -g code-squad-cli` |
-| **Use** | Manage threads, review diffs, inline feedback | `csq flip` — opens browser UI (or setup iTerm hotkey) |
+| **Use** | Manage threads, review diffs, inline feedback | `csq` — create/switch/delete worktrees |
 
 ---
 
@@ -67,7 +67,7 @@ Or download from [Open VSX](https://open-vsx.org/extension/JakePark/code-squad)
 
 ## CLI
 
-Worktree helper. Create worktrees, browse files. Opens a browser UI via command or iTerm hotkey.
+Manage worktrees from terminal. Create, switch, delete—without leaving your shell.
 
 ### Install
 
@@ -77,24 +77,21 @@ npm install -g code-squad-cli
 
 ### Usage
 
-Run the command directly, or set up an iTerm hotkey for quick access.
-
 ```bash
-csq flip              # Open UI for current directory
-csq flip /path/to/dir # Open UI for specific directory
-csq flip setup        # Setup iTerm2 hotkey
+csq           # Interactive mode - select/create/delete worktrees
+csq new       # Create new worktree
+csq list      # List all worktrees
+csq quit      # Exit current worktree
+csq -p        # Persistent mode - stay in menu after action
 ```
 
-### iTerm2 Hotkey (macOS)
+### Flip (File Viewer)
 
-Optional but recommended. Run `csq flip setup`, then:
-
-1. iTerm2 → Settings → Keys → Key Bindings
-2. Add new binding (e.g., `⌘⇧F`)
-3. Action: `Run Coprocess`
-4. Command: paste path from clipboard
-
-Works even while AI tools are running in the terminal.
+```bash
+csq flip              # Open browser UI for current directory
+csq flip /path/to/dir # Open for specific directory
+csq flip setup        # Setup iTerm2 hotkey (optional)
+```
 
 ### Config
 
