@@ -3,8 +3,8 @@ import * as path from 'path';
 import { confirm } from '@inquirer/prompts';
 import { TmuxAdapter } from './TmuxAdapter.js';
 import { GitAdapter } from '../adapters/GitAdapter.js';
-import { runDashboardUI } from './DashboardUI.js';
-import type { PaneInfo } from './types.js';
+import { runInkDashboard } from './InkDashboard.js';
+import { loadAllThreads } from './threadHelpers.js';
 
 const tmuxAdapter = new TmuxAdapter();
 const gitAdapter = new GitAdapter();
@@ -175,38 +175,26 @@ export async function runDash(workspaceRoot: string): Promise<void> {
             throw new Error('Could not get current pane ID');
         }
 
-        // 워크트리 목록 로드
-        const worktrees = await gitAdapter.listWorktrees(workspaceRoot);
+        // 스레드 목록 로드
+        const threads = await loadAllThreads(workspaceRoot);
 
         // 초기 레이아웃 설정: 좌측에 대시보드(20%), 우측에 터미널(80%)
-        if (worktrees.length === 0) {
+        if (threads.length === 0) {
             await tmuxAdapter.splitWindow('v', workspaceRoot, 80);
         } else {
-            await tmuxAdapter.splitWindow('v', worktrees[0].path, 80);
+            await tmuxAdapter.splitWindow('v', threads[0].path, 80);
         }
 
         // 대시보드 pane으로 포커스 복귀
         await tmuxAdapter.selectPane(dashPaneId);
 
-        // pane 목록 조회
-        const allPanes = await tmuxAdapter.listPanes();
-        const paneInfos: PaneInfo[] = allPanes
-            .filter(p => p.id !== dashPaneId)
-            .map((p, i) => ({
-                id: p.id,
-                index: p.index,
-                worktreePath: p.cwd,
-                worktreeName: path.basename(p.cwd),
-                active: p.active,
-            }));
-
         console.clear();
 
-        // 대시보드 UI 실행
-        const result = await runDashboardUI({
+        // 대시보드 UI 실행 (Ink)
+        const result = await runInkDashboard({
             workspaceRoot,
             repoName,
-            initialWorktrees: worktrees,
+            initialThreads: threads,
             tmuxAdapter,
             gitAdapter,
             dashPaneId,

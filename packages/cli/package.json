@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "build": "tsc && npm run bundle && npm run build:flip-ui",
-    "bundle": "esbuild dist/index.js --bundle --platform=node --format=esm --outfile=dist/index.js --allow-overwrite --external:@inquirer/core --external:@inquirer/prompts --external:chalk --external:chokidar --external:express --external:cors --external:clipboardy --external:open --external:fast-glob",
+    "bundle": "esbuild dist/index.js --bundle --platform=node --format=esm --outfile=dist/index.js --allow-overwrite --external:@inquirer/core --external:@inquirer/prompts --external:chalk --external:chokidar --external:express --external:cors --external:clipboardy --external:open --external:fast-glob --external:ink --external:ink-text-input --external:react",
     "build:flip-ui": "cd flip-ui && pnpm build && mkdir -p ../dist/flip-ui && cp -r dist ../dist/flip-ui/",
     "build:watch": "tsc --watch",
     "dev": "tsx src/index.ts",
@@ -29,13 +29,17 @@
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "fast-glob": "^3.3.3",
-    "open": "^10.0.3"
+    "ink": "^5.1.0",
+    "ink-text-input": "^6.0.0",
+    "open": "^10.0.3",
+    "react": "^18.3.1"
   },
   "devDependencies": {
     "@code-squad/core": "workspace:*",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "20.x",
+    "@types/react": "^18.3.18",
     "esbuild": "^0.27.2",
     "rimraf": "^6.1.2",
     "tsx": "^4.21.0",

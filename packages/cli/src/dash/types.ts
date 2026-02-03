@@ -1,10 +1,44 @@
 import type { WorktreeInfo } from '@code-squad/core';
 
 /**
+ * 격리 모드 (스레드 타입)
+ */
+export type IsolationMode = 'local' | 'worktree';
+
+/**
+ * 통합 스레드 정보
+ */
+export interface ThreadInfo {
+    id: string;
+    name: string;
+    type: 'worktree' | 'local';
+    path: string;
+    branch?: string;
+    isolationMode: IsolationMode;
+    hasPane: boolean;
+    paneId?: string;
+}
+
+/**
+ * 새 스레드 폼 상태
+ */
+export interface NewThreadForm {
+    name: string;
+    isolationMode: IsolationMode;
+    branchName: string;
+    isExpanded: boolean;
+}
+
+/**
+ * 입력 모드
+ */
+export type InputMode = 'normal' | 'new-thread-form' | 'confirm-delete';
+
+/**
  * 대시보드 상태
  */
 export interface DashboardState {
-    worktrees: WorktreeInfo[];
+    threads: ThreadInfo[];
     panes: PaneInfo[];
     selectedIndex: number;
     repoName: string;
@@ -32,3 +66,6 @@ export type DashAction =
     | { type: 'split'; direction: 'h' | 'v' }
     | { type: 'focus'; paneIndex: number }
     | { type: 'refresh' };
+
+// Re-export for backward compatibility
+export type { WorktreeInfo };
