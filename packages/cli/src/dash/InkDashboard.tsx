@@ -292,6 +292,11 @@ function Dashboard({
         }, 140);
     }, [restoreDashboardSize]);
 
+    // 초기 레이아웃 안정화 (마운트 시 한 번 실행)
+    useEffect(() => {
+        void restoreDashboardSize();
+    }, [restoreDashboardSize]);
+
     // pane 전환 함수 (swap-pane 방식)
     const switchToPane = useCallback(async (targetKey: string, targetWindowId: string) => {
         if (targetKey === visiblePaneKey) {
@@ -301,6 +306,9 @@ function Dashboard({
 
         const currentRightWidth = await tmuxAdapter.getPaneWidth(visiblePaneId);
         await tmuxAdapter.setWindowPaneWidth(targetWindowId, currentRightWidth);
+
+        // swap 전 레이아웃 안정화
+        await restoreDashboardSize();
 
         // target window의 pane과 현재 오른쪽 pane을 swap
         await tmuxAdapter.swapPaneWithWindow(targetWindowId, visiblePaneId);
@@ -426,22 +434,13 @@ function Dashboard({
         try {
             const newThread = await createThread(workspaceRoot, newThreadName.trim(), isolationMode);
 
-            // 현재 pane을 hidden window로 분리
-            const hiddenWindowId = await tmuxAdapter.breakPaneToWindow(visiblePaneId);
-            await restoreDashboardSize();
-            setHiddenWindows(prev => new Map(prev).set(visiblePaneKey, hiddenWindowId));
+            // 새 window 생성 (기존 스레드 열기와 동일한 방식)
+            const newWindowId = await tmuxAdapter.createHiddenWindow(newThread.path);
+            const currentRightWidth = await tmuxAdapter.getPaneWidth(visiblePaneId);
+            await tmuxAdapter.setWindowPaneWidth(newWindowId, currentRightWidth);
 
-            // 새 pane 생성
-            const newPaneId = await tmuxAdapter.splitPane(dashPaneId, 'v', newThread.path);
-            await restoreDashboardSize();
-
-            setVisiblePaneId(newPaneId);
-            setVisiblePaneKey(newThread.id);
-
-            await tmuxAdapter.selectPane(dashPaneId);
-
-            // 대시보드 리렌더
-            hardRedraw();
+            // switchToPane으로 전환 (기존 스레드 포커스와 동일)
+            await switchToPane(newThread.id, newWindowId);
 
             await refreshThreads();
             setSelectedIndex(threads.length);
