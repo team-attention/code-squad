@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { render, Box, Text, useInput, useApp, useStdin } from 'ink';
 import TextInput from 'ink-text-input';
-import type { ThreadInfo, PaneInfo, IsolationMode } from './types.js';
+import type { ThreadInfo, IsolationMode } from './types.js';
 import { TmuxAdapter } from './TmuxAdapter.js';
-import { GitAdapter } from '../adapters/GitAdapter.js';
 import { loadAllThreads, createThread, deleteThread } from './threadHelpers.js';
-import path from 'node:path';
+
+// 대시보드 pane 고정 너비
+const DASHBOARD_WIDTH = 35;
 
 // 마우스 이벤트 파싱
 interface MouseEvent {
@@ -68,10 +69,11 @@ type InputMode = 'normal' | 'new-thread' | 'confirm-delete';
 interface DashboardProps {
     workspaceRoot: string;
     repoName: string;
+    currentBranch: string;
     initialThreads: ThreadInfo[];
     tmuxAdapter: TmuxAdapter;
-    gitAdapter: GitAdapter;
     dashPaneId: string;
+    initialTerminalPaneId: string;
     onQuit: () => void;
 }
 
@@ -79,21 +81,20 @@ interface DashboardProps {
 function ThreadCard({
     thread,
     isSelected,
-    pane,
+    isVisible,
+    hasPaneOpen,
 }: {
     thread: ThreadInfo;
     isSelected: boolean;
-    pane?: PaneInfo;
+    isVisible: boolean;
+    hasPaneOpen: boolean;
 }) {
     const borderColor = isSelected ? 'cyan' : 'gray';
     const nameColor = isSelected ? 'cyan' : 'white';
 
-    const statusIcon = pane
-        ? pane.active ? '●' : '○'
-        : '○';
-    const statusColor = pane
-        ? pane.active ? 'green' : 'blue'
-        : 'gray';
+    // isVisible: 현재 보이는 pane, hasPaneOpen: pane이 존재하지만 숨겨진 상태
+    const statusIcon = isVisible ? '●' : hasPaneOpen ? '○' : '○';
+    const statusColor = isVisible ? 'green' : hasPaneOpen ? 'blue' : 'gray';
 
     const typeBadge = thread.isolationMode === 'worktree' ? 'W' : 'L';
     const typeColor = thread.isolationMode === 'worktree' ? 'green' : 'gray';
@@ -218,7 +219,7 @@ function HintBar({ mode }: { mode: InputMode }) {
 
     return (
         <Box marginTop={1}>
-            <Text color="gray">↑↓/jk: nav  +/n: new  Enter: open  d: del  q: quit</Text>
+            <Text color="gray">↑↓/jk: nav  Enter: switch  r: refresh  q: quit</Text>
         </Box>
     );
 }
@@ -227,15 +228,16 @@ function HintBar({ mode }: { mode: InputMode }) {
 function Dashboard({
     workspaceRoot,
     repoName,
+    currentBranch,
     initialThreads,
     tmuxAdapter,
     dashPaneId,
+    initialTerminalPaneId,
     onQuit,
 }: DashboardProps) {
     const { exit } = useApp();
 
     const [threads, setThreads] = useState<ThreadInfo[]>(initialThreads);
-    const [panes, setPanes] = useState<PaneInfo[]>([]);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [inputMode, setInputMode] = useState<InputMode>('normal');
     const [newThreadName, setNewThreadName] = useState('');
@@ -243,58 +245,106 @@ function Dashboard({
     const [status, setStatus] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
 
+    // 현재 보이는 pane 정보
+    const [visiblePaneId, setVisiblePaneId] = useState<string>(initialTerminalPaneId);
+    const [visiblePaneKey, setVisiblePaneKey] = useState<string>('__initial__');
+
+    // 숨겨진 pane들: key → hidden window ID
+    const [hiddenWindows, setHiddenWindows] = useState<Map<string, string>>(new Map());
+
     // 스레드 목록 새로고침
     const refreshThreads = useCallback(async () => {
-        const currentPanes = await tmuxAdapter.listPanes();
-        const paneInfos: PaneInfo[] = currentPanes
-            .filter(p => p.id !== dashPaneId)
-            .map((p, i) => ({
-                id: p.id,
-                index: p.index,
-                worktreePath: p.cwd,
-                worktreeName: path.basename(p.cwd),
-                active: p.active,
-            }));
-        setPanes(paneInfos);
-
-        const updatedThreads = await loadAllThreads(workspaceRoot, paneInfos);
+        const updatedThreads = await loadAllThreads(workspaceRoot);
         setThreads(updatedThreads);
-        return { threads: updatedThreads, panes: paneInfos };
-    }, [tmuxAdapter, dashPaneId, workspaceRoot]);
+        return { threads: updatedThreads };
+    }, [workspaceRoot]);
+
+    // 화면 새로고침 (잔상 제거 + 리렌더)
+    const hardRedraw = useCallback(() => {
+        process.stdout.write('\x1b[2J\x1b[H\x1b[3J');
+        void tmuxAdapter.refreshClient();
+        setTimeout(() => {
+            process.stdout.emit('resize');
+        }, 140);
+    }, [tmuxAdapter]);
+
+    const getRightPaneId = useCallback(async (): Promise<string> => {
+        const panes = await tmuxAdapter.listPanes();
+        const rightPane = panes.find(p => p.id !== dashPaneId);
+        return rightPane?.id ?? visiblePaneId;
+    }, [tmuxAdapter, dashPaneId, visiblePaneId]);
+
+    // 대시보드 크기 복원 + 레이아웃 고정
+    const restoreDashboardSize = useCallback(async () => {
+        const windowWidth = await tmuxAdapter.getWindowWidth();
+        const rightPaneId = await getRightPaneId();
+        const rightWidth = Math.max(10, windowWidth - DASHBOARD_WIDTH - 1);
+        await tmuxAdapter.setPaneWidth(dashPaneId, DASHBOARD_WIDTH);
+        if (rightPaneId && rightPaneId !== dashPaneId) {
+            await tmuxAdapter.setPaneWidth(rightPaneId, rightWidth);
+        }
+    }, [tmuxAdapter, dashPaneId, getRightPaneId]);
+
+    const stabilizeLayout = useCallback(() => {
+        void restoreDashboardSize();
+        setTimeout(() => {
+            void restoreDashboardSize();
+        }, 140);
+    }, [restoreDashboardSize]);
+
+    // pane 전환 함수 (swap-pane 방식)
+    const switchToPane = useCallback(async (targetKey: string, targetWindowId: string) => {
+        if (targetKey === visiblePaneKey) {
+            await tmuxAdapter.selectPane(visiblePaneId);
+            return;
+        }
+
+        const currentRightWidth = await tmuxAdapter.getPaneWidth(visiblePaneId);
+        await tmuxAdapter.setWindowPaneWidth(targetWindowId, currentRightWidth);
+
+        // target window의 pane과 현재 오른쪽 pane을 swap
+        await tmuxAdapter.swapPaneWithWindow(targetWindowId, visiblePaneId);
+        await restoreDashboardSize();
+        setHiddenWindows(prev => {
+            const newMap = new Map(prev);
+            newMap.delete(targetKey); // target은 이제 visible
+            newMap.set(visiblePaneKey, targetWindowId); // 기존 visible은 hidden으로 이동
+            return newMap;
+        });
+
+        setVisiblePaneId(await getRightPaneId());
+        setVisiblePaneKey(targetKey);
+
+        // 대시보드 리렌더
+        hardRedraw();
+        stabilizeLayout();
+    }, [visiblePaneId, visiblePaneKey, tmuxAdapter, restoreDashboardSize, getRightPaneId, hardRedraw, stabilizeLayout]);
 
     // 터미널 pane 열기/포커스
     const openOrFocusPane = useCallback(async (thread: ThreadInfo) => {
-        let pane = panes.find(p => p.worktreePath === thread.path);
-
-        if (!pane) {
-            setStatus(`Opening ${thread.name}...`);
-
-            const existingPanes = await tmuxAdapter.listPanes();
-            const rightPanes = existingPanes.filter(p => p.id !== dashPaneId);
-
-            let newPaneId: string;
-            if (rightPanes.length > 0) {
-                newPaneId = await tmuxAdapter.splitPane(rightPanes[rightPanes.length - 1].id, 'v', thread.path);
-            } else {
-                newPaneId = await tmuxAdapter.splitWindow('v', thread.path);
-            }
-
-            await tmuxAdapter.distributeRightPanes(dashPaneId);
-
-            const newPane: PaneInfo = {
-                id: newPaneId,
-                index: panes.length,
-                worktreePath: thread.path,
-                worktreeName: thread.name,
-                active: true,
-            };
-            setPanes(prev => [...prev, newPane]);
-            pane = newPane;
+        // 이미 보이는 pane이면 포커스만
+        if (thread.id === visiblePaneKey) {
+            await tmuxAdapter.selectPane(visiblePaneId);
+            setStatus(`Focused: ${thread.name}`);
+            return;
         }
 
-        await tmuxAdapter.selectPane(pane.id);
-        setStatus(`Focused: ${thread.name}`);
-    }, [panes, tmuxAdapter, dashPaneId]);
+        // 숨겨진 window가 있으면 전환
+        const existingWindowId = hiddenWindows.get(thread.id);
+        if (existingWindowId) {
+            await switchToPane(thread.id, existingWindowId);
+            setStatus(`Switched: ${thread.name}`);
+            return;
+        }
+
+        // 새 window 생성 후 swap으로 전환
+        setStatus(`Opening ${thread.name}...`);
+        const newWindowId = await tmuxAdapter.createHiddenWindow(thread.path);
+        const currentRightWidth = await tmuxAdapter.getPaneWidth(visiblePaneId);
+        await tmuxAdapter.setWindowPaneWidth(newWindowId, currentRightWidth);
+        await switchToPane(thread.id, newWindowId);
+        setStatus(`Opened: ${thread.name}`);
+    }, [visiblePaneId, visiblePaneKey, hiddenWindows, tmuxAdapter, switchToPane]);
 
     // 레이아웃 행 계산 (마우스 클릭 매핑용)
     // 헤더: 3줄 (border + content + border)
@@ -355,11 +405,11 @@ function Dashboard({
                 setInputMode('confirm-delete');
             }
         } else if (input === 'r') {
-            setIsProcessing(true);
-            setStatus('Refreshing...');
+            // 화면 클리어 + 전체 리렌더
+            process.stdout.write('\x1b[2J\x1b[H');
+            process.stdout.emit('resize');
             await refreshThreads();
             setStatus('Refreshed');
-            setIsProcessing(false);
         }
     });
 
@@ -376,17 +426,22 @@ function Dashboard({
         try {
             const newThread = await createThread(workspaceRoot, newThreadName.trim(), isolationMode);
 
-            const existingPanes = await tmuxAdapter.listPanes();
-            const rightPanes = existingPanes.filter(p => p.id !== dashPaneId);
+            // 현재 pane을 hidden window로 분리
+            const hiddenWindowId = await tmuxAdapter.breakPaneToWindow(visiblePaneId);
+            await restoreDashboardSize();
+            setHiddenWindows(prev => new Map(prev).set(visiblePaneKey, hiddenWindowId));
 
-            if (rightPanes.length > 0) {
-                await tmuxAdapter.splitPane(rightPanes[rightPanes.length - 1].id, 'v', newThread.path);
-            } else {
-                await tmuxAdapter.splitWindow('v', newThread.path);
-            }
+            // 새 pane 생성
+            const newPaneId = await tmuxAdapter.splitPane(dashPaneId, 'v', newThread.path);
+            await restoreDashboardSize();
 
-            await tmuxAdapter.distributeRightPanes(dashPaneId);
+            setVisiblePaneId(newPaneId);
+            setVisiblePaneKey(newThread.id);
+
             await tmuxAdapter.selectPane(dashPaneId);
+
+            // 대시보드 리렌더
+            hardRedraw();
 
             await refreshThreads();
             setSelectedIndex(threads.length);
@@ -409,8 +464,41 @@ function Dashboard({
         setStatus(`Deleting ${selected.name}...`);
 
         try {
-            if (selected.paneId) {
-                await tmuxAdapter.killPane(selected.paneId);
+            // 삭제할 스레드가 현재 보이는 pane인 경우
+            if (selected.id === visiblePaneKey) {
+                // 다른 곳으로 전환
+                const otherKey = hiddenWindows.has('__initial__')
+                    ? '__initial__'
+                    : Array.from(hiddenWindows.keys()).find(k => k !== selected.id);
+
+                if (otherKey) {
+                    const otherWindowId = hiddenWindows.get(otherKey);
+                    if (otherWindowId) {
+                        await switchToPane(otherKey, otherWindowId);
+                    }
+                }
+
+                // 이제 숨겨진 window로 이동한 삭제 대상 종료
+                const hiddenWindowId = hiddenWindows.get(selected.id);
+                if (hiddenWindowId) {
+                    await tmuxAdapter.killWindow(hiddenWindowId);
+                    setHiddenWindows(prev => {
+                        const newMap = new Map(prev);
+                        newMap.delete(selected.id);
+                        return newMap;
+                    });
+                }
+            } else {
+                // 숨겨진 window에 있는 경우
+                const hiddenWindowId = hiddenWindows.get(selected.id);
+                if (hiddenWindowId) {
+                    await tmuxAdapter.killWindow(hiddenWindowId);
+                    setHiddenWindows(prev => {
+                        const newMap = new Map(prev);
+                        newMap.delete(selected.id);
+                        return newMap;
+                    });
+                }
             }
 
             await deleteThread(workspaceRoot, selected);
@@ -418,7 +506,6 @@ function Dashboard({
             const { threads: updatedThreads } = await refreshThreads();
             setSelectedIndex(Math.min(selectedIndex, Math.max(0, updatedThreads.length - 1)));
 
-            await tmuxAdapter.distributeRightPanes(dashPaneId);
             setInputMode('normal');
             setStatus(`Deleted: ${selected.name}`);
         } catch (error) {
@@ -439,7 +526,8 @@ function Dashboard({
                 marginBottom={1}
             >
                 <Text bold color="white">{repoName}</Text>
-                <Text color="gray"> ({threads.length} threads)</Text>
+                <Text color="cyan"> [{currentBranch}]</Text>
+                <Text color="gray"> ({threads.length})</Text>
             </Box>
 
             {/* 새 스레드 폼 또는 버튼 */}
@@ -482,14 +570,19 @@ function Dashboard({
                         <Text color="gray">No threads yet</Text>
                     </Box>
                 ) : (
-                    threads.map((thread, i) => (
-                        <ThreadCard
-                            key={thread.id}
-                            thread={thread}
-                            isSelected={i === selectedIndex}
-                            pane={panes.find(p => p.worktreePath === thread.path)}
-                        />
-                    ))
+                    threads.map((thread, i) => {
+                        const isVisible = thread.id === visiblePaneKey;
+                        const hasPaneOpen = isVisible || hiddenWindows.has(thread.id);
+                        return (
+                            <ThreadCard
+                                key={thread.id}
+                                thread={thread}
+                                isSelected={i === selectedIndex}
+                                isVisible={isVisible}
+                                hasPaneOpen={hasPaneOpen}
+                            />
+                        );
+                    })
                 )}
             </Box>
 

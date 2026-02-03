@@ -175,15 +175,17 @@ export async function runDash(workspaceRoot: string): Promise<void> {
             throw new Error('Could not get current pane ID');
         }
 
+        // 대시보드 pane 고정 리사이즈 훅 설정
+        await tmuxAdapter.setDashboardResizeHook(dashPaneId, 35);
+
         // 스레드 목록 로드
         const threads = await loadAllThreads(workspaceRoot);
 
+        // 현재 브랜치 조회
+        const currentBranch = await gitAdapter.getCurrentBranch(workspaceRoot);
+
         // 초기 레이아웃 설정: 좌측에 대시보드(20%), 우측에 터미널(80%)
-        if (threads.length === 0) {
-            await tmuxAdapter.splitWindow('v', workspaceRoot, 80);
-        } else {
-            await tmuxAdapter.splitWindow('v', threads[0].path, 80);
-        }
+        const initialTerminalPaneId = await tmuxAdapter.splitWindow('v', workspaceRoot, 80);
 
         // 대시보드 pane으로 포커스 복귀
         await tmuxAdapter.selectPane(dashPaneId);
@@ -194,10 +196,11 @@ export async function runDash(workspaceRoot: string): Promise<void> {
         const result = await runInkDashboard({
             workspaceRoot,
             repoName,
+            currentBranch,
             initialThreads: threads,
             tmuxAdapter,
-            gitAdapter,
             dashPaneId,
+            initialTerminalPaneId,
         });
 
         if (result.action === 'quit') {

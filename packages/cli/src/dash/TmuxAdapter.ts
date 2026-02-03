@@ -139,6 +139,13 @@ export class TmuxAdapter {
     }
 
     /**
+     * pane에 특수 키 전송 (C-l, C-c, Enter 등 tmux 키 이름)
+     */
+    async sendSpecialKey(paneId: string, keyName: string): Promise<void> {
+        await exec(`tmux send-keys -t "${paneId}" ${keyName}`, execOptions);
+    }
+
+    /**
      * pane에 Enter 키 전송
      */
     async sendEnter(paneId: string): Promise<void> {
@@ -158,6 +165,115 @@ export class TmuxAdapter {
      */
     async resizePane(paneId: string, direction: 'U' | 'D' | 'L' | 'R', amount: number): Promise<void> {
         await exec(`tmux resize-pane -t "${paneId}" -${direction} ${amount}`, execOptions);
+    }
+
+    /**
+     * pane 너비를 절대값으로 설정
+     */
+    async setPaneWidth(paneId: string, width: number): Promise<void> {
+        await exec(`tmux resize-pane -t "${paneId}" -x ${width}`, execOptions);
+    }
+
+    /**
+     * pane을 별도 window로 분리 (백그라운드 실행 유지)
+     * @returns 새로 생성된 window ID
+     */
+    async breakPaneToWindow(paneId: string): Promise<string> {
+        const { stdout } = await exec(
+            `tmux break-pane -d -s "${paneId}" -P -F "#{window_id}"`,
+            execOptions
+        );
+        return stdout.trim();
+    }
+
+    /**
+     * 숨겨진 window 생성 (단일 pane)
+     */
+    async createHiddenWindow(cwd?: string): Promise<string> {
+        const cwdFlag = cwd ? `-c "${cwd}"` : '';
+        const { stdout } = await exec(
+            `tmux new-window -d ${cwdFlag} -P -F "#{window_id}"`,
+            execOptions
+        );
+        return stdout.trim();
+    }
+
+    /**
+     * window의 pane을 특정 pane과 swap
+     */
+    async swapPaneWithWindow(windowId: string, targetPaneId: string): Promise<void> {
+        await exec(`tmux swap-pane -d -s "${windowId}.0" -t "${targetPaneId}"`, execOptions);
+    }
+
+    /**
+     * window 내 단일 pane 너비 설정
+     */
+    async setWindowPaneWidth(windowId: string, width: number): Promise<void> {
+        await exec(`tmux resize-pane -t "${windowId}.0" -x ${width}`, execOptions);
+    }
+
+    /**
+     * pane index로 pane ID 조회 (현재 window)
+     */
+    async getPaneIdByIndex(index: number): Promise<string | null> {
+        try {
+            const { stdout } = await exec('tmux list-panes -F "#{pane_index}|#{pane_id}"', execOptions);
+            const match = stdout
+                .trim()
+                .split('\n')
+                .map(line => line.split('|'))
+                .find(([idx]) => parseInt(idx, 10) === index);
+            return match?.[1] ?? null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * 숨겨진 window에서 pane을 현재 window로 가져옴
+     * @param windowId 숨겨진 window ID
+     * @param targetPaneId 옆에 배치할 target pane
+     * @returns 가져온 pane의 새 ID
+     */
+    async joinPaneFromWindow(windowId: string, targetPaneId: string): Promise<string> {
+        // 수평 분할로 target pane 옆에 배치
+        await exec(
+            `tmux join-pane -h -s "${windowId}.0" -t "${targetPaneId}"`,
+            execOptions
+        );
+        // 새로 join된 pane ID 반환
+        const { stdout } = await exec('tmux display-message -p "#{pane_id}"', execOptions);
+        return stdout.trim();
+    }
+
+    /**
+     * pane 숨기기 (width=0) - deprecated, use breakPaneToWindow
+     */
+    async hidePane(paneId: string): Promise<void> {
+        await exec(`tmux resize-pane -t "${paneId}" -x 0`, execOptions);
+    }
+
+    /**
+     * pane 표시 (지정 너비로 복원) - deprecated, use joinPaneFromWindow
+     */
+    async showPane(paneId: string, width: number): Promise<void> {
+        await exec(`tmux resize-pane -t "${paneId}" -x ${width}`, execOptions);
+    }
+
+    /**
+     * 현재 window 너비 조회
+     */
+    async getWindowWidth(): Promise<number> {
+        const { stdout } = await exec('tmux display-message -p "#{window_width}"', execOptions);
+        return parseInt(stdout.trim(), 10);
+    }
+
+    /**
+     * pane 너비 조회
+     */
+    async getPaneWidth(paneId: string): Promise<number> {
+        const { stdout } = await exec(`tmux display-message -t "${paneId}" -p "#{pane_width}"`, execOptions);
+        return parseInt(stdout.trim(), 10);
     }
 
     /**
@@ -196,8 +312,8 @@ export class TmuxAdapter {
             "set -g pane-active-border-style 'fg=cyan,bold'",
             "set -g pane-border-style 'fg=#444444'",
             'set -g pane-border-lines single',
-            'set -g pane-border-status top',
-            "set -g pane-border-format ' #{pane_current_path} '",
+            'set -g pane-border-status off',
+            "set -g pane-border-format ''",
             // pane 번호 표시 시간 늘리기
             'set -g display-panes-time 5000',
             // pane 번호 색상
@@ -213,17 +329,23 @@ export class TmuxAdapter {
             }
         }
 
-        // 대시보드(pane 0) 크기 고정 - 리사이즈 후 자동 복원 (세션 레벨)
-        try {
-            await exec(`tmux set-hook after-resize-pane 'resize-pane -t 0 -x 35'`, execOptions);
-        } catch {
-            // 실패해도 계속 진행
-        }
-
         // Ctrl+b m = pane 이동 메뉴 (대시보드 pane 0 제외)
         try {
             // 간단한 메뉴 - pane 0에서는 동작 안 함, Move Left는 pane 1에서 동작 안 함
             await exec(`tmux bind-key m if-shell -F "#{!=:#{pane_index},0}" "display-menu -T 'Move Pane' -x P -y P 'Move Left' l 'if-shell -F \\"#{>:#{pane_index},1}\\" \\"swap-pane -U\\"' 'Move Right' r 'swap-pane -D' '' 'Swap #1' 1 'swap-pane -t 1' 'Swap #2' 2 'swap-pane -t 2' 'Swap #3' 3 'swap-pane -t 3' 'Swap #4' 4 'swap-pane -t 4' '' 'Cancel' q ''"`, execOptions);
+        } catch {
+            // 실패해도 계속 진행
+        }
+    }
+
+    /**
+     * 대시보드 pane 리사이즈 훅 설정
+     */
+    async setDashboardResizeHook(paneId: string, width: number): Promise<void> {
+        try {
+            await exec(`tmux set -g @csq_dash_pane "${paneId}"`, execOptions);
+            await exec(`tmux set -g @csq_dash_width "${width}"`, execOptions);
+            await exec(`tmux set-hook after-resize-pane 'resize-pane -t "#{@csq_dash_pane}" -x #{@csq_dash_width}'`, execOptions);
         } catch {
             // 실패해도 계속 진행
         }
@@ -263,6 +385,28 @@ export class TmuxAdapter {
      */
     async killCurrentSession(): Promise<void> {
         await exec('tmux kill-session', execOptions);
+    }
+
+    /**
+     * 특정 window 종료
+     */
+    async killWindow(windowId: string): Promise<void> {
+        await exec(`tmux kill-window -t "${windowId}"`, execOptions);
+    }
+
+    /**
+     * pane 화면 클리어 (scrollback 포함)
+     */
+    async clearPane(paneId: string): Promise<void> {
+        await exec(`tmux send-keys -t "${paneId}" -R`, execOptions);
+        await exec(`tmux clear-history -t "${paneId}"`, execOptions);
+    }
+
+    /**
+     * 클라이언트 강제 리프레시
+     */
+    async refreshClient(): Promise<void> {
+        await exec('tmux refresh-client -S', execOptions);
     }
 
     /**
