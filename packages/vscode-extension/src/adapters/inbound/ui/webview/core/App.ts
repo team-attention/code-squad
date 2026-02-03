@@ -434,6 +434,14 @@ async function renderState(state: RenderState): Promise<void> {
   if (state.draftComment && state.draftComment.file === newFile) {
     restoreDraftCommentForm(state.draftComment);
   }
+
+  // Preserve sidebar width during render cycles
+  // This fixes the bug where sidebar resets to smaller size after file removal
+  const sidebarElementsForWidth = getSidebarElements();
+  if (sidebarElementsForWidth && !document.body.classList.contains('sidebar-collapsed')) {
+    const currentWidth = stateManager.getUI().sidebarWidth;
+    document.body.style.gridTemplateColumns = `1fr 4px ${currentWidth}px`;
+  }
 }
 
 // ===== Diff Rendering =====
