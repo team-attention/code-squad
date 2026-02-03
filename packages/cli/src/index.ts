@@ -18,6 +18,7 @@ import {
 import { confirm } from '@inquirer/prompts';
 import type { WorktreeInfo } from '@code-squad/core';
 import { runFlip } from './flip/index.js';
+import { runDash } from './dash/index.js';
 import { loadConfig, getWorktreeCopyPatterns } from './config.js';
 import { copyFilesWithPatterns } from './fileUtils.js';
 
@@ -82,12 +83,20 @@ async function main() {
         case 'quit':
             await quitWorktreeCommand();
             break;
-        default:
+        case 'dash':
+            await runDash(workspaceRoot);
+            break;
+        case '--legacy':
+            // 기존 TUI 모드 (호환성)
             if (persistentMode) {
                 await persistentInteractiveMode(workspaceRoot);
             } else {
                 await interactiveMode(workspaceRoot);
             }
+            break;
+        default:
+            // 기본값: 대시보드 모드
+            await runDash(workspaceRoot);
     }
 }
 
