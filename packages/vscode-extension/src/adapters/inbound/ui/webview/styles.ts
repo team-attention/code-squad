@@ -21,10 +21,83 @@ body {
   grid-area: sidebar;
   padding: 16px;
   border-left: 1px solid var(--vscode-panel-border);
-  overflow-y: auto;
+  overflow: hidden;
   background-color: var(--vscode-sideBar-background);
   position: relative;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.shortcuts-section {
+  padding: 8px 0 12px 0;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.shortcuts-section h3 {
+  margin-bottom: 8px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.shortcut-keys {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  box-shadow: 0 1px 0 var(--vscode-panel-border);
+}
+
+.shortcut-desc {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.files-section {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.files-section .section {
+  margin-bottom: 0;
+}
+
+.comments-section {
+  flex-shrink: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid var(--vscode-panel-border);
+  padding-top: 12px;
+  margin-top: 12px;
 }
 
 .main-content {

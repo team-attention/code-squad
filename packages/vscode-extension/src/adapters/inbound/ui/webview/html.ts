@@ -9,36 +9,56 @@ export const webviewHtml = `
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-header">
-        <h3>Changed Files</h3>
-        <div class="toggle-row" id="toggle-row" style="display: none;">
-          <span class="toggle-label">+<span id="uncommitted-count">0</span> prior changes</span>
-          <div class="toggle-checkbox" id="uncommitted-toggle"></div>
-        </div>
+    <div class="shortcuts-section">
+      <h3>Shortcuts</h3>
+      <div class="shortcut-item">
+        <div class="shortcut-keys"><span class="kbd">⌘</span><span class="kbd">Click</span></div>
+        <span class="shortcut-desc">Add comment</span>
       </div>
-      <div class="files-toolbar">
-        <button class="toggle-btn" id="view-mode-toggle">List</button>
-        <div class="search-container">
-          <input type="text"
-                 id="file-search"
-                 class="search-input"
-                 placeholder="Search files..."
-                 autocomplete="off">
-          <button class="search-clear" id="search-clear" style="display: none;">×</button>
-        </div>
+      <div class="shortcut-item">
+        <div class="shortcut-keys"><span class="kbd">Esc</span></div>
+        <span class="shortcut-desc">Cancel selection</span>
       </div>
-      <div id="search-results" class="search-results" style="display: none;"></div>
-      <div id="files-list">
-              </div>
+      <div class="shortcut-item">
+        <div class="shortcut-keys"><span class="kbd">⌘</span><span class="kbd">Enter</span></div>
+        <span class="shortcut-desc">Submit to AI</span>
+      </div>
     </div>
 
-    <div class="section">
-      <h3>Comments</h3>
-      <div id="comments-list">
-        <div class="empty-text">No comments yet</div>
+    <div class="files-section">
+      <div class="section">
+        <div class="section-header">
+          <h3>Changed Files</h3>
+          <div class="toggle-row" id="toggle-row" style="display: none;">
+            <span class="toggle-label">+<span id="uncommitted-count">0</span> prior changes</span>
+            <div class="toggle-checkbox" id="uncommitted-toggle"></div>
+          </div>
+        </div>
+        <div class="files-toolbar">
+          <button class="toggle-btn" id="view-mode-toggle">List</button>
+          <div class="search-container">
+            <input type="text"
+                   id="file-search"
+                   class="search-input"
+                   placeholder="Search files..."
+                   autocomplete="off">
+            <button class="search-clear" id="search-clear" style="display: none;">×</button>
+          </div>
+        </div>
+        <div id="search-results" class="search-results" style="display: none;"></div>
+        <div id="files-list">
+                </div>
       </div>
-      <button id="submit-comments" style="margin-top: 12px;">Ask AI</button>
+    </div>
+
+    <div class="comments-section">
+      <div class="section">
+        <h3>Comments</h3>
+        <div id="comments-list">
+          <div class="empty-text">No comments yet</div>
+        </div>
+        <button id="submit-comments" style="margin-top: 12px;">Ask AI</button>
+      </div>
     </div>
   </div>
 
