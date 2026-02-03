@@ -28,6 +28,15 @@ export class CreateThreadUseCase implements ICreateThreadUseCase {
         let branch: string | undefined;
         let worktreePath: string | undefined;
 
+        // Capture starting branch for local mode
+        if (isolationMode === 'none') {
+            try {
+                branch = await this.gitPort.getCurrentBranch(workspaceRoot);
+            } catch {
+                // Git not available or not in a repo - that's ok
+            }
+        }
+
         if (isolationMode === 'worktree') {
             if (customWorktreePath) {
                 // Resolve relative path to absolute path based on workspaceRoot
