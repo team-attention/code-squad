@@ -45,3 +45,6 @@ coverage/
 CLAUDE.md
 .codex
 /content
+
+# Spets workflow outputs
+.spets/outputs/
