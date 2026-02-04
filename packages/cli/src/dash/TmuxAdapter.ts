@@ -337,10 +337,10 @@ export class TmuxAdapter {
             // 실패해도 계속 진행
         }
 
-        // Ctrl+Space = 대시보드/터미널 간 포커스 토글 (prefix 없이)
+        // Shift+Tab = 대시보드/터미널 간 포커스 토글 (prefix 없이)
         // pane 0(대시보드)이면 pane 1(터미널)로, 그 외면 pane 0(대시보드)으로 이동
         try {
-            await exec(`tmux bind-key -n C-Space if-shell -F "#{==:#{pane_index},0}" "select-pane -t 1" "select-pane -t 0"`, execOptions);
+            await exec(`tmux bind-key -n BTab if-shell -F "#{==:#{pane_index},0}" "select-pane -t 1" "select-pane -t 0"`, execOptions);
         } catch {
             // 실패해도 계속 진행
         }
