@@ -471,4 +471,87 @@ export class TmuxAdapter {
             // 실패해도 계속 진행
         }
     }
+
+    // ============================================================
+    // Window 관련 메서드 (Task 1, 8)
+    // ============================================================
+
+    /**
+     * 현재 세션의 모든 window 목록 조회
+     */
+    async listWindows(): Promise<{ id: string; index: number; name: string; cwd: string; active: boolean }[]> {
+        try {
+            const { stdout } = await exec(
+                'tmux list-windows -F "#{window_id}|#{window_index}|#{window_name}|#{pane_current_path}|#{window_active}"',
+                execOptions
+            );
+
+            return stdout.trim().split('\n').filter(Boolean).map(line => {
+                const [id, index, name, cwd, active] = line.split('|');
+                return {
+                    id,
+                    index: parseInt(index, 10),
+                    name,
+                    cwd,
+                    active: active === '1',
+                };
+            });
+        } catch {
+            return [];
+        }
+    }
+
+    /**
+     * 특정 window로 포커스 전환
+     */
+    async selectWindow(windowId: string): Promise<void> {
+        await exec(`tmux select-window -t "${windowId}"`, execOptions);
+    }
+
+    /**
+     * 새 window 생성
+     * @param cwd 작업 디렉토리 (옵션)
+     * @param name window 이름 (옵션)
+     * @returns 생성된 window ID
+     */
+    async createNewWindow(cwd?: string, name?: string): Promise<string> {
+        const cwdFlag = cwd ? `-c "${cwd}"` : '';
+        const nameFlag = name ? `-n "${name}"` : '';
+        const { stdout } = await exec(
+            `tmux new-window ${cwdFlag} ${nameFlag} -P -F "#{window_id}"`,
+            execOptions
+        );
+        return stdout.trim();
+    }
+
+    /**
+     * 현재 window ID 조회
+     */
+    async getCurrentWindowId(): Promise<string | null> {
+        try {
+            const { stdout } = await exec('tmux display-message -p "#{window_id}"', execOptions);
+            return stdout.trim();
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * 현재 window index 조회
+     */
+    async getCurrentWindowIndex(): Promise<number | null> {
+        try {
+            const { stdout } = await exec('tmux display-message -p "#{window_index}"', execOptions);
+            return parseInt(stdout.trim(), 10);
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * window 이름 변경
+     */
+    async renameWindow(windowId: string, name: string): Promise<void> {
+        await exec(`tmux rename-window -t "${windowId}" "${name}"`, execOptions);
+    }
 }

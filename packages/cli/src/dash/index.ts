@@ -4,7 +4,7 @@ import { confirm } from '@inquirer/prompts';
 import { TmuxAdapter } from './TmuxAdapter.js';
 import { GitAdapter } from '../adapters/GitAdapter.js';
 import { runInkDashboard } from './InkDashboard.js';
-import { loadAllThreads } from './threadHelpers.js';
+import { loadAllWindows } from './windowHelpers.js';
 
 const tmuxAdapter = new TmuxAdapter();
 const gitAdapter = new GitAdapter();
@@ -175,11 +175,17 @@ export async function runDash(workspaceRoot: string): Promise<void> {
             throw new Error('Could not get current pane ID');
         }
 
+        // 현재 window index 저장 (대시보드 window)
+        const dashWindowIndex = await tmuxAdapter.getCurrentWindowIndex();
+        if (dashWindowIndex === null) {
+            throw new Error('Could not get current window index');
+        }
+
         // 대시보드 pane 고정 리사이즈 훅 설정
         await tmuxAdapter.setDashboardResizeHook(dashPaneId, 35);
 
-        // 스레드 목록 로드
-        const threads = await loadAllThreads(workspaceRoot);
+        // 윈도우 목록 로드 (대시보드 제외)
+        const windows = await loadAllWindows(tmuxAdapter, dashWindowIndex);
 
         // 현재 브랜치 조회
         const currentBranch = await gitAdapter.getCurrentBranch(workspaceRoot);
@@ -199,10 +205,9 @@ export async function runDash(workspaceRoot: string): Promise<void> {
             workspaceRoot,
             repoName,
             currentBranch,
-            initialThreads: threads,
+            initialWindows: windows,
             tmuxAdapter,
-            dashPaneId,
-            initialTerminalPaneId,
+            dashWindowIndex,
         });
     } catch (error) {
         console.error(chalk.red(`Dashboard error: ${(error as Error).message}`));

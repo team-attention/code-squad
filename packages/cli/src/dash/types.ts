@@ -3,7 +3,20 @@ import type { WorktreeInfo } from '@code-squad/core';
 /**
  * 격리 모드 (스레드 타입)
  */
-export type IsolationMode = 'local' | 'worktree';
+export type IsolationMode = 'local' | 'worktree' | 'window';
+
+/**
+ * tmux window 정보
+ */
+export interface TmuxWindowInfo {
+    windowId: string;
+    windowIndex: number;
+    name: string;
+    cwd: string;
+    isActive: boolean;
+    isGitRepo?: boolean;
+    worktreeBranch?: string;
+}
 
 /**
  * 통합 스레드 정보
