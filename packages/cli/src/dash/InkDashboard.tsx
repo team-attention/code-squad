@@ -323,20 +323,13 @@ function Dashboard({
         return { windows: updatedWindows };
     }, [tmuxAdapter, dashWindowIndex]);
 
-    // workspaceRoot가 Git repo인지 확인 (currentBranch 없을 때만)
+    // currentBranch가 있으면 git repo, 없으면 window 모드로 전환
     useEffect(() => {
-        // currentBranch가 있으면 이미 git repo
-        if (currentBranch) return;
-
-        const checkGitRepo = async () => {
-            const isGit = await gitAdapter.isGitRepository(workspaceRoot);
-            setIsGitRepo(isGit);
-            if (!isGit) {
-                setIsolationMode('window');
-            }
-        };
-        void checkGitRepo();
-    }, [workspaceRoot, currentBranch]);
+        if (!currentBranch) {
+            setIsGitRepo(false);
+            setIsolationMode('window');
+        }
+    }, []);
 
     // 레이아웃 행 계산 (마우스 클릭 매핑용)
     const HEADER_ROWS = 3;
