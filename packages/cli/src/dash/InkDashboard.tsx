@@ -74,7 +74,6 @@ interface DashboardProps {
     tmuxAdapter: TmuxAdapter;
     dashPaneId: string;
     initialTerminalPaneId: string;
-    onQuit: () => void;
 }
 
 // 스레드 카드 컴포넌트
@@ -219,7 +218,7 @@ function HintBar({ mode }: { mode: InputMode }) {
 
     return (
         <Box marginTop={1}>
-            <Text color="gray">↑↓/jk: nav  Enter: switch  S-Tab: focus  r: refresh  q: quit</Text>
+            <Text color="gray">↑↓/jk: nav  Enter: switch  S-Tab: focus  r: refresh  q: detach</Text>
         </Box>
     );
 }
@@ -233,9 +232,7 @@ function Dashboard({
     tmuxAdapter,
     dashPaneId,
     initialTerminalPaneId,
-    onQuit,
 }: DashboardProps) {
-    const { exit } = useApp();
 
     const [threads, setThreads] = useState<ThreadInfo[]>(initialThreads);
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -398,8 +395,13 @@ function Dashboard({
         } else if (input === 'k' || key.upArrow) {
             setSelectedIndex(prev => (prev - 1 + Math.max(threads.length, 1)) % Math.max(threads.length, 1));
         } else if (input === 'q') {
-            onQuit();
-            exit();
+            // Detach from tmux but keep the Ink process running
+            // This allows the user to reattach and see the dashboard in the same state
+            try {
+                await tmuxAdapter.detachClient();
+            } catch (error) {
+                setStatus('Failed to detach: ' + (error as Error).message);
+            }
         } else if (key.return) {
             const selected = threads[selectedIndex];
             if (selected) {
@@ -599,16 +601,9 @@ function Dashboard({
 }
 
 // 대시보드 실행
-export async function runInkDashboard(config: Omit<DashboardProps, 'onQuit'>): Promise<{ action: 'quit' }> {
-    return new Promise((resolve) => {
-        const { unmount } = render(
-            <Dashboard
-                {...config}
-                onQuit={() => {
-                    unmount();
-                    resolve({ action: 'quit' });
-                }}
-            />
-        );
-    });
+// This function never resolves - the dashboard keeps running until the process is killed
+export async function runInkDashboard(config: DashboardProps): Promise<void> {
+    render(<Dashboard {...config} />);
+    // Never resolve - the process stays alive until tmux session is killed
+    await new Promise(() => {});
 }

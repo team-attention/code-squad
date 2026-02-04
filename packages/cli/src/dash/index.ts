@@ -193,7 +193,9 @@ export async function runDash(workspaceRoot: string): Promise<void> {
         console.clear();
 
         // 대시보드 UI 실행 (Ink)
-        const result = await runInkDashboard({
+        // This never returns - the dashboard keeps running until tmux session is killed
+        // When user presses 'q', the dashboard calls detachClient() directly
+        await runInkDashboard({
             workspaceRoot,
             repoName,
             currentBranch,
@@ -202,12 +204,6 @@ export async function runDash(workspaceRoot: string): Promise<void> {
             dashPaneId,
             initialTerminalPaneId,
         });
-
-        if (result.action === 'quit') {
-            console.log(chalk.dim('Detaching session...'));
-            // 대시보드 종료 시 tmux 세션 detach (세션은 유지)
-            await tmuxAdapter.detachClient();
-        }
     } catch (error) {
         console.error(chalk.red(`Dashboard error: ${(error as Error).message}`));
         process.exit(1);
