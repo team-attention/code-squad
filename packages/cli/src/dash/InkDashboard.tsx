@@ -320,19 +320,17 @@ function Dashboard({
         return { windows: updatedWindows };
     }, [tmuxAdapter, dashWindowIndex]);
 
-    // startPath 변경 시 Git repo 여부 확인
+    // workspaceRoot가 Git repo인지 확인 (마운트 시 한 번만)
     useEffect(() => {
         const checkGitRepo = async () => {
-            if (startPath) {
-                const isGit = await gitAdapter.isGitRepository(startPath);
-                setIsGitRepo(isGit);
-                if (!isGit) {
-                    setIsolationMode('window');
-                }
+            const isGit = await gitAdapter.isGitRepository(workspaceRoot);
+            setIsGitRepo(isGit);
+            if (!isGit) {
+                setIsolationMode('window');
             }
         };
         void checkGitRepo();
-    }, [startPath]);
+    }, [workspaceRoot]);
 
     // 레이아웃 행 계산 (마우스 클릭 매핑용)
     const HEADER_ROWS = 3;
