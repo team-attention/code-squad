@@ -388,6 +388,13 @@ export class TmuxAdapter {
     }
 
     /**
+     * 현재 클라이언트 detach (세션은 유지)
+     */
+    async detachClient(): Promise<void> {
+        await exec('tmux detach-client', execOptions);
+    }
+
+    /**
      * 특정 window 종료
      */
     async killWindow(windowId: string): Promise<void> {

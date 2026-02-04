@@ -204,9 +204,9 @@ export async function runDash(workspaceRoot: string): Promise<void> {
         });
 
         if (result.action === 'quit') {
-            console.log(chalk.dim('Closing session...'));
-            // 대시보드 종료 시 tmux 세션 전체 종료
-            await tmuxAdapter.killCurrentSession();
+            console.log(chalk.dim('Detaching session...'));
+            // 대시보드 종료 시 tmux 세션 detach (세션은 유지)
+            await tmuxAdapter.detachClient();
         }
     } catch (error) {
         console.error(chalk.red(`Dashboard error: ${(error as Error).message}`));
