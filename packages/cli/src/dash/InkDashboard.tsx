@@ -219,7 +219,7 @@ function HintBar({ mode }: { mode: InputMode }) {
 
     return (
         <Box marginTop={1}>
-            <Text color="gray">↑↓/jk: nav  Enter: switch  r: refresh  q: quit</Text>
+            <Text color="gray">↑↓/jk: nav  Enter: switch  C-Space: focus  r: refresh  q: quit</Text>
         </Box>
     );
 }
