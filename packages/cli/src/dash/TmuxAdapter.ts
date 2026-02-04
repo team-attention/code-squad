@@ -312,8 +312,8 @@ export class TmuxAdapter {
             "set -g pane-active-border-style 'fg=cyan,bold'",
             "set -g pane-border-style 'fg=#444444'",
             'set -g pane-border-lines single',
-            'set -g pane-border-status off',
-            "set -g pane-border-format ''",
+            'set -g pane-border-status top',
+            "set -g pane-border-format ' #{pane_current_path} '",
             // pane 번호 표시 시간 늘리기
             'set -g display-panes-time 5000',
             // pane 번호 색상

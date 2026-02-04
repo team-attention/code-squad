@@ -444,8 +444,9 @@ function Dashboard({
             // switchToPane으로 전환 (기존 스레드 포커스와 동일)
             await switchToPane(newThread.id, newWindowId);
 
-            await refreshThreads();
-            setSelectedIndex(threads.length);
+            const { threads: updatedThreads } = await refreshThreads();
+            const newIndex = updatedThreads.findIndex(t => t.id === newThread.id);
+            setSelectedIndex(newIndex >= 0 ? newIndex : updatedThreads.length - 1);
             setInputMode('normal');
             setNewThreadName('');
             setStatus(`Created: ${newThreadName}`);
