@@ -280,33 +280,35 @@ function Dashboard({
     const [startPath, setStartPath] = useState(workspaceRoot);
     const [isolationMode, setIsolationMode] = useState<IsolationMode>('worktree');
 
-    // worktree 경로 계산
-    const computeWorktreePath = useCallback(
-        (name: string) => `${workspaceRoot}.worktree/${name}`,
-        [workspaceRoot]
-    );
+    // name 변경 핸들러 (공백 제거만)
+    const handleWindowNameChange = (value: string) => {
+        setNewWindowName(value.replace(/\s/g, ''));
+    };
 
-    // name 변경 핸들러 (공백 제거 + worktree 모드면 path 자동 업데이트)
-    const handleWindowNameChange = useCallback((value: string) => {
-        const sanitized = value.replace(/\s/g, '');
-        setNewWindowName(sanitized);
-        if (isolationMode === 'worktree' && sanitized) {
-            setStartPath(`${workspaceRoot}.worktree/${sanitized}`);
-        } else if (isolationMode === 'worktree' && !sanitized) {
-            setStartPath(workspaceRoot);
+    // worktree 모드일 때 name 변경 시 path 자동 업데이트
+    useEffect(() => {
+        if (isolationMode === 'worktree') {
+            if (newWindowName) {
+                setStartPath(`${workspaceRoot}.worktree/${newWindowName}`);
+            } else {
+                setStartPath(workspaceRoot);
+            }
         }
-    }, [isolationMode, workspaceRoot]);
+    }, [newWindowName, isolationMode, workspaceRoot]);
 
     // 모드 전환 핸들러
-    const handleToggleMode = useCallback(() => {
-        const newMode = isolationMode === 'worktree' ? 'window' : 'worktree';
-        setIsolationMode(newMode);
-        if (newMode === 'worktree' && newWindowName) {
+    const handleToggleMode = () => {
+        setIsolationMode(prev => prev === 'worktree' ? 'window' : 'worktree');
+    };
+
+    // 모드 변경 시 path 업데이트
+    useEffect(() => {
+        if (isolationMode === 'worktree' && newWindowName) {
             setStartPath(`${workspaceRoot}.worktree/${newWindowName}`);
-        } else if (newMode === 'window') {
+        } else if (isolationMode === 'window') {
             setStartPath(workspaceRoot);
         }
-    }, [isolationMode, newWindowName, workspaceRoot]);
+    }, [isolationMode, workspaceRoot, newWindowName]);
     const [isGitRepo, setIsGitRepo] = useState(!!currentBranch);
     const [status, setStatus] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
