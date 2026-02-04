@@ -280,35 +280,27 @@ function Dashboard({
     const [startPath, setStartPath] = useState(workspaceRoot);
     const [isolationMode, setIsolationMode] = useState<IsolationMode>('worktree');
 
-    // name 변경 핸들러 (공백 제거만)
+    // name 변경 핸들러 (공백 제거 + worktree 모드면 path도 직접 업데이트)
     const handleWindowNameChange = (value: string) => {
-        setNewWindowName(value.replace(/\s/g, ''));
-    };
-
-    // worktree 모드일 때 name 변경 시 path 자동 업데이트
-    useEffect(() => {
+        const sanitized = value.replace(/\s/g, '');
+        setNewWindowName(sanitized);
+        // worktree 모드면 path도 바로 업데이트
         if (isolationMode === 'worktree') {
-            if (newWindowName) {
-                setStartPath(`${workspaceRoot}.worktree/${newWindowName}`);
-            } else {
-                setStartPath(workspaceRoot);
-            }
+            setStartPath(sanitized ? `${workspaceRoot}.worktree/${sanitized}` : workspaceRoot);
         }
-    }, [newWindowName, isolationMode, workspaceRoot]);
+    };
 
     // 모드 전환 핸들러
     const handleToggleMode = () => {
-        setIsolationMode(prev => prev === 'worktree' ? 'window' : 'worktree');
-    };
-
-    // 모드 변경 시 path 업데이트
-    useEffect(() => {
-        if (isolationMode === 'worktree' && newWindowName) {
-            setStartPath(`${workspaceRoot}.worktree/${newWindowName}`);
-        } else if (isolationMode === 'window') {
+        const newMode = isolationMode === 'worktree' ? 'window' : 'worktree';
+        setIsolationMode(newMode);
+        // 모드 전환 시 path 업데이트
+        if (newMode === 'worktree') {
+            setStartPath(newWindowName ? `${workspaceRoot}.worktree/${newWindowName}` : workspaceRoot);
+        } else {
             setStartPath(workspaceRoot);
         }
-    }, [isolationMode, workspaceRoot, newWindowName]);
+    };
     const [isGitRepo, setIsGitRepo] = useState(!!currentBranch);
     const [status, setStatus] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
