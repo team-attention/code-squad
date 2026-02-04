@@ -505,7 +505,13 @@ function Dashboard({
             await deleteThread(workspaceRoot, selected);
 
             const { threads: updatedThreads } = await refreshThreads();
-            setSelectedIndex(Math.min(selectedIndex, Math.max(0, updatedThreads.length - 1)));
+            const newIndex = Math.min(selectedIndex, Math.max(0, updatedThreads.length - 1));
+            setSelectedIndex(newIndex);
+
+            // 남은 스레드가 있으면 해당 스레드로 포커스
+            if (updatedThreads.length > 0) {
+                await openOrFocusPane(updatedThreads[newIndex]);
+            }
 
             setInputMode('normal');
             setStatus(`Deleted: ${selected.name}`);
