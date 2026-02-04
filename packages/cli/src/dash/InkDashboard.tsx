@@ -123,6 +123,9 @@ function WindowCard({
     );
 }
 
+// 포커스 필드 타입
+type FocusField = 'name' | 'path';
+
 // 새 Window 폼 컴포넌트
 function NewWindowForm({
     windowName,
@@ -145,15 +148,17 @@ function NewWindowForm({
     onSubmit: () => void;
     onCancel: () => void;
 }) {
+    const [focusedField, setFocusedField] = useState<FocusField>('name');
+
     useInput((input, key) => {
         if (key.escape) {
             onCancel();
         } else if (key.return) {
             onSubmit();
         } else if (key.tab) {
-            if (isGitRepo) {
-                onToggleMode();
-            }
+            setFocusedField(prev => prev === 'name' ? 'path' : 'name');
+        } else if (input === 'm' && isGitRepo) {
+            onToggleMode();
         }
     });
 
@@ -169,26 +174,28 @@ function NewWindowForm({
         >
             <Text color="yellow" bold>+ New Window</Text>
             <Box marginTop={1}>
-                <Text>Name: </Text>
+                <Text color={focusedField === 'name' ? 'cyan' : undefined}>Name: </Text>
                 <TextInput
                     value={windowName}
                     onChange={onWindowNameChange}
                     placeholder="window-name"
+                    focus={focusedField === 'name'}
                 />
             </Box>
             <Box marginTop={1}>
-                <Text>Path: </Text>
+                <Text color={focusedField === 'path' ? 'cyan' : undefined}>Path: </Text>
                 <TextInput
                     value={startPath}
                     onChange={onStartPathChange}
                     placeholder="/path/to/dir"
+                    focus={focusedField === 'path'}
                 />
             </Box>
             {isGitRepo && (
                 <Box marginTop={1}>
                     <Text>Mode: </Text>
                     <Text color={modeColor}>● {modeText}</Text>
-                    <Text color="gray"> (Tab to switch)</Text>
+                    <Text color="gray"> (m to switch)</Text>
                 </Box>
             )}
             <Box marginTop={1}>
@@ -233,7 +240,7 @@ function HintBar({ mode, filterMode }: { mode: InputMode; filterMode: FilterMode
     if (mode === 'new-window') {
         return (
             <Box marginTop={1}>
-                <Text color="gray">Tab: mode  Enter: create  Esc: cancel</Text>
+                <Text color="gray">Tab: switch field  m: mode  Enter: create  Esc: cancel</Text>
             </Box>
         );
     }
