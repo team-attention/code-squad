@@ -320,8 +320,11 @@ function Dashboard({
         return { windows: updatedWindows };
     }, [tmuxAdapter, dashWindowIndex]);
 
-    // workspaceRoot가 Git repo인지 확인 (마운트 시 한 번만)
+    // workspaceRoot가 Git repo인지 확인 (currentBranch 없을 때만)
     useEffect(() => {
+        // currentBranch가 있으면 이미 git repo
+        if (currentBranch) return;
+
         const checkGitRepo = async () => {
             const isGit = await gitAdapter.isGitRepository(workspaceRoot);
             setIsGitRepo(isGit);
@@ -330,7 +333,7 @@ function Dashboard({
             }
         };
         void checkGitRepo();
-    }, [workspaceRoot]);
+    }, [workspaceRoot, currentBranch]);
 
     // 레이아웃 행 계산 (마우스 클릭 매핑용)
     const HEADER_ROWS = 3;
