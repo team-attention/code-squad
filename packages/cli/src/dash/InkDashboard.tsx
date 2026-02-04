@@ -304,7 +304,7 @@ function Dashboard({
             setStartPath(workspaceRoot);
         }
     };
-    const [isGitRepo, setIsGitRepo] = useState(false);
+    const [isGitRepo, setIsGitRepo] = useState(!!currentBranch);
     const [status, setStatus] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
 
