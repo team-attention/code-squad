@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { render, Box, Text, useInput, useStdin } from 'ink';
 import TextInput from 'ink-text-input';
 import type { TmuxWindowInfo, IsolationMode } from './types.js';
@@ -280,23 +280,30 @@ function Dashboard({
     const [startPath, setStartPath] = useState(workspaceRoot);
     const [isolationMode, setIsolationMode] = useState<IsolationMode>('worktree');
 
+    // ref로 최신 값 유지 (클로저 문제 해결)
+    const isolationModeRef = useRef(isolationMode);
+    const newWindowNameRef = useRef(newWindowName);
+    useEffect(() => { isolationModeRef.current = isolationMode; }, [isolationMode]);
+    useEffect(() => { newWindowNameRef.current = newWindowName; }, [newWindowName]);
+
     // name 변경 핸들러 (공백 제거 + worktree 모드면 path도 직접 업데이트)
     const handleWindowNameChange = (value: string) => {
         const sanitized = value.replace(/\s/g, '');
         setNewWindowName(sanitized);
-        // worktree 모드면 path도 바로 업데이트
-        if (isolationMode === 'worktree') {
+        // worktree 모드면 path도 바로 업데이트 (ref로 최신 값 참조)
+        if (isolationModeRef.current === 'worktree') {
             setStartPath(sanitized ? `${workspaceRoot}.worktree/${sanitized}` : workspaceRoot);
         }
     };
 
     // 모드 전환 핸들러
     const handleToggleMode = () => {
-        const newMode = isolationMode === 'worktree' ? 'window' : 'worktree';
+        const newMode = isolationModeRef.current === 'worktree' ? 'window' : 'worktree';
         setIsolationMode(newMode);
+        isolationModeRef.current = newMode;
         // 모드 전환 시 path 업데이트
         if (newMode === 'worktree') {
-            setStartPath(newWindowName ? `${workspaceRoot}.worktree/${newWindowName}` : workspaceRoot);
+            setStartPath(newWindowNameRef.current ? `${workspaceRoot}.worktree/${newWindowNameRef.current}` : workspaceRoot);
         } else {
             setStartPath(workspaceRoot);
         }
