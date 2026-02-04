@@ -177,7 +177,7 @@ function NewWindowForm({
                 <Text color={focusedField === 'name' ? 'cyan' : undefined}>Name: </Text>
                 <TextInput
                     value={windowName}
-                    onChange={onWindowNameChange}
+                    onChange={focusedField === 'name' ? onWindowNameChange : () => {}}
                     placeholder="window-name"
                     focus={focusedField === 'name'}
                 />
@@ -186,7 +186,7 @@ function NewWindowForm({
                 <Text color={focusedField === 'path' ? 'cyan' : undefined}>Path: </Text>
                 <TextInput
                     value={startPath}
-                    onChange={onStartPathChange}
+                    onChange={focusedField === 'path' ? onStartPathChange : () => {}}
                     placeholder="/path/to/dir"
                     focus={focusedField === 'path'}
                 />
