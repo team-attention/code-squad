@@ -150,14 +150,17 @@ function NewWindowForm({
 }) {
     const [focusedField, setFocusedField] = useState<FocusField>('name');
 
+    // worktree 모드면 path 필드 이동 불가
+    const canEditPath = isolationMode === 'window';
+
     useInput((input, key) => {
         if (key.escape) {
             onCancel();
         } else if (key.return) {
             onSubmit();
-        } else if (key.tab) {
+        } else if (key.tab && canEditPath) {
             setFocusedField(prev => prev === 'name' ? 'path' : 'name');
-        } else if (input === 'm' && isGitRepo) {
+        } else if (input === ' ' && isGitRepo) {
             onToggleMode();
         }
     });
@@ -183,19 +186,23 @@ function NewWindowForm({
                 />
             </Box>
             <Box marginTop={1}>
-                <Text color={focusedField === 'path' ? 'cyan' : undefined}>Path: </Text>
-                <TextInput
-                    value={startPath}
-                    onChange={focusedField === 'path' ? onStartPathChange : () => {}}
-                    placeholder="/path/to/dir"
-                    focus={focusedField === 'path'}
-                />
+                <Text color={canEditPath && focusedField === 'path' ? 'cyan' : 'gray'}>Path: </Text>
+                {canEditPath ? (
+                    <TextInput
+                        value={startPath}
+                        onChange={focusedField === 'path' ? onStartPathChange : () => {}}
+                        placeholder="/path/to/dir"
+                        focus={focusedField === 'path'}
+                    />
+                ) : (
+                    <Text color="gray">{startPath || `${'{workspace}'}.worktree/{name}`}</Text>
+                )}
             </Box>
             {isGitRepo && (
                 <Box marginTop={1}>
                     <Text>Mode: </Text>
                     <Text color={modeColor}>● {modeText}</Text>
-                    <Text color="gray"> (m to switch)</Text>
+                    <Text color="gray"> (Space to switch)</Text>
                 </Box>
             )}
             <Box marginTop={1}>
@@ -240,7 +247,7 @@ function HintBar({ mode, filterMode }: { mode: InputMode; filterMode: FilterMode
     if (mode === 'new-window') {
         return (
             <Box marginTop={1}>
-                <Text color="gray">Tab: switch field  m: mode  Enter: create  Esc: cancel</Text>
+                <Text color="gray">Space: mode  Tab: field  Enter: create  Esc: cancel</Text>
             </Box>
         );
     }
@@ -271,7 +278,32 @@ function Dashboard({
     const [filterMode, setFilterMode] = useState<FilterMode>('all');
     const [newWindowName, setNewWindowName] = useState('');
     const [startPath, setStartPath] = useState(workspaceRoot);
-    const [isolationMode, setIsolationMode] = useState<IsolationMode>('window');
+    const [isolationMode, setIsolationMode] = useState<IsolationMode>('worktree');
+
+    // worktree 경로 계산
+    const computeWorktreePath = (name: string) => `${workspaceRoot}.worktree/${name}`;
+
+    // name 변경 핸들러 (공백 제거 + worktree 모드면 path 자동 업데이트)
+    const handleWindowNameChange = (value: string) => {
+        const sanitized = value.replace(/\s/g, '');
+        setNewWindowName(sanitized);
+        if (isolationMode === 'worktree' && sanitized) {
+            setStartPath(computeWorktreePath(sanitized));
+        } else if (isolationMode === 'worktree' && !sanitized) {
+            setStartPath(workspaceRoot);
+        }
+    };
+
+    // 모드 전환 핸들러
+    const handleToggleMode = () => {
+        const newMode = isolationMode === 'worktree' ? 'window' : 'worktree';
+        setIsolationMode(newMode);
+        if (newMode === 'worktree' && newWindowName) {
+            setStartPath(computeWorktreePath(newWindowName));
+        } else if (newMode === 'window') {
+            setStartPath(workspaceRoot);
+        }
+    };
     const [isGitRepo, setIsGitRepo] = useState(false);
     const [status, setStatus] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
@@ -462,11 +494,11 @@ function Dashboard({
             {inputMode === 'new-window' ? (
                 <NewWindowForm
                     windowName={newWindowName}
-                    onWindowNameChange={setNewWindowName}
+                    onWindowNameChange={handleWindowNameChange}
                     startPath={startPath}
                     onStartPathChange={setStartPath}
                     isolationMode={isolationMode}
-                    onToggleMode={() => setIsolationMode(m => m === 'worktree' ? 'window' : 'worktree')}
+                    onToggleMode={handleToggleMode}
                     isGitRepo={isGitRepo}
                     onSubmit={handleCreateWindow}
                     onCancel={() => {
