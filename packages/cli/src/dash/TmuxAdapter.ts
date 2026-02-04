@@ -309,6 +309,8 @@ export class TmuxAdapter {
     async applyUXSettings(): Promise<void> {
         const settings = [
             'set -g mouse on',
+            // extended-keys 활성화 (Shift+Tab 등 modifier key 조합 인식에 필요)
+            'set -g extended-keys on',
             "set -g pane-active-border-style 'fg=cyan,bold'",
             "set -g pane-border-style 'fg=#444444'",
             'set -g pane-border-lines single',
