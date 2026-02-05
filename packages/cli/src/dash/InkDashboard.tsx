@@ -150,17 +150,14 @@ function NewWindowForm({
 }) {
     const [focusedField, setFocusedField] = useState<FocusField>('name');
 
-    // worktree 모드면 path 필드 이동 불가
-    const canEditPath = isolationMode === 'window';
-
     useInput((input, key) => {
         if (key.escape) {
             onCancel();
         } else if (key.return) {
             onSubmit();
-        } else if (key.tab && canEditPath) {
+        } else if (key.tab) {
             setFocusedField(prev => prev === 'name' ? 'path' : 'name');
-        } else if (input === ' ' && isGitRepo) {
+        } else if (input === ' ' && isGitRepo && focusedField === 'name') {
             onToggleMode();
         }
     });
@@ -186,16 +183,16 @@ function NewWindowForm({
                 />
             </Box>
             <Box marginTop={1}>
-                <Text color={canEditPath && focusedField === 'path' ? 'cyan' : 'gray'}>Path: </Text>
-                {canEditPath ? (
+                <Text color={focusedField === 'path' ? 'cyan' : 'gray'}>Path: </Text>
+                {focusedField === 'path' ? (
                     <TextInput
                         value={startPath}
-                        onChange={focusedField === 'path' ? onStartPathChange : () => {}}
+                        onChange={onStartPathChange}
                         placeholder="/path/to/dir"
-                        focus={focusedField === 'path'}
+                        focus={true}
                     />
                 ) : (
-                    <Text color="gray">{startPath || `${'{workspace}'}.worktree/{name}`}</Text>
+                    <Text color="gray">{startPath}</Text>
                 )}
             </Box>
             {isGitRepo && (
@@ -350,7 +347,7 @@ function Dashboard({
         if (row >= HEADER_ROWS + 1 && row <= HEADER_ROWS + NEW_WINDOW_ROWS + 1) {
             setInputMode('new-window');
             setNewWindowName('');
-            setStartPath(workspaceRoot);
+            setStartPath(isolationModeRef.current === 'worktree' ? `${workspaceRoot}.worktree/` : workspaceRoot);
             return;
         }
 
@@ -401,7 +398,7 @@ function Dashboard({
         } else if (input === 'n' || input === '+') {
             setInputMode('new-window');
             setNewWindowName('');
-            setStartPath(workspaceRoot);
+            setStartPath(isolationModeRef.current === 'worktree' ? `${workspaceRoot}.worktree/` : workspaceRoot);
         } else if (input === 'd') {
             if (displayedWindows[selectedIndex]) {
                 setInputMode('confirm-delete');
