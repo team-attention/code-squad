@@ -520,7 +520,7 @@ export class TmuxAdapter {
         const cwdFlag = cwd ? `-c "${cwd}"` : '';
         const nameFlag = name ? `-n "${name}"` : '';
         const { stdout } = await exec(
-            `tmux new-window ${cwdFlag} ${nameFlag} -P -F "#{window_id}"`,
+            `tmux new-window -d ${cwdFlag} ${nameFlag} -P -F "#{window_id}"`,
             execOptions
         );
         return stdout.trim();

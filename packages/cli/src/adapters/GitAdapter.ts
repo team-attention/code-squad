@@ -29,11 +29,24 @@ export class GitAdapter implements PartialGitPort {
     }
 
     async getCurrentBranch(workspaceRoot: string): Promise<string> {
-        const { stdout } = await exec(
-            `cd "${workspaceRoot}" && git rev-parse --abbrev-ref HEAD`,
-            execOptions
-        );
-        return stdout.trim();
+        try {
+            const { stdout } = await exec(
+                `cd "${workspaceRoot}" && git rev-parse --abbrev-ref HEAD`,
+                execOptions
+            );
+            return stdout.trim();
+        } catch {
+            // No commits yet — fall back to symbolic-ref (e.g. "main" on fresh repos)
+            try {
+                const { stdout } = await exec(
+                    `cd "${workspaceRoot}" && git symbolic-ref --short HEAD`,
+                    execOptions
+                );
+                return stdout.trim();
+            } catch {
+                return '';
+            }
+        }
     }
 
     async listWorktrees(workspaceRoot: string): Promise<WorktreeInfo[]> {
@@ -91,12 +104,15 @@ export class GitAdapter implements PartialGitPort {
         branch: string,
         workspaceRoot: string
     ): Promise<void> {
-        // Extract parent directory and create it if needed
+        // Prune stale worktree entries (e.g. directory was deleted but still registered)
+        await exec(`cd "${workspaceRoot}" && git worktree prune`, execOptions).catch(() => {});
+
+        // Recursively create parent directory
         const parentDir = worktreePath.substring(0, worktreePath.lastIndexOf('/'));
         const mkdirCmd = parentDir ? `mkdir -p "${parentDir}" && ` : '';
 
         await exec(
-            `cd "${workspaceRoot}" && ${mkdirCmd}git worktree add "${worktreePath}" -b "${branch}"`,
+            `cd "${workspaceRoot}" && ${mkdirCmd}git worktree add -f "${worktreePath}" -b "${branch}"`,
             execOptions
         );
     }

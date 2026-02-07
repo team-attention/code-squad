@@ -196,6 +196,12 @@ export async function runDash(workspaceRoot: string): Promise<void> {
         // 대시보드 pane으로 포커스 복귀
         await tmuxAdapter.selectPane(dashPaneId);
 
+        // splitWindow triggers async SIGWINCH signals from the resize hook cascade.
+        // Wait briefly for them to settle, then sync process.stdout.columns with the
+        // actual pane width so Ink calculates line counts correctly on first render.
+        await new Promise(resolve => setTimeout(resolve, 50));
+        process.stdout.columns = await tmuxAdapter.getPaneWidth(dashPaneId);
+
         console.clear();
 
         // 대시보드 UI 실행 (Ink)

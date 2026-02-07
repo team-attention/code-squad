@@ -5,7 +5,7 @@ import type { TmuxWindowInfo, IsolationMode } from './types.js';
 import { TmuxAdapter } from './TmuxAdapter.js';
 import { GitAdapter } from '../adapters/GitAdapter.js';
 import { loadAllWindows, filterWindowsByPath, createWindowWithOptions, deleteWindowById } from './windowHelpers.js';
-import { createThread } from './threadHelpers.js';
+import { createThread, deleteThread } from './threadHelpers.js';
 
 // 대시보드 pane 고정 너비
 const DASHBOARD_WIDTH = 35;
@@ -312,6 +312,16 @@ function Dashboard({
     const [isGitRepo, setIsGitRepo] = useState(!!currentBranch);
     const [status, setStatus] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
+    // Track which window's content is currently shown in the right pane
+    const activeWindowIdRef = useRef<string | null>(null);
+    const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Auto-clear status message after 2 seconds
+    const showStatus = useCallback((msg: string) => {
+        if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+        setStatus(msg);
+        statusTimerRef.current = setTimeout(() => setStatus(''), 2000);
+    }, []);
 
     // 필터링된 window 목록
     const displayedWindows = filterMode === 'current'
@@ -365,13 +375,45 @@ function Dashboard({
     // 마우스 이벤트 (normal 모드에서만 활성화)
     useMouse(handleMouseClick, inputMode === 'normal');
 
-    // Window 선택 (포커스 전환)
+    // 오른쪽 pane 찾기 (대시보드 pane index 0 제외)
+    const findRightPane = async () => {
+        const panes = await tmuxAdapter.listPanes();
+        return panes.find(p => p.index !== 0);
+    };
+
+    // Window 선택 (오른쪽 pane에 swap)
     const handleSelectWindow = async (win: TmuxWindowInfo) => {
         try {
-            await tmuxAdapter.selectWindow(win.windowId);
-            setStatus(`Switched: ${win.name}`);
+            // Already showing this window — just focus the right pane
+            if (win.windowId === activeWindowIdRef.current) {
+                const rightPane = await findRightPane();
+                if (rightPane) await tmuxAdapter.selectPane(rightPane.id);
+                return;
+            }
+
+            // Swap current right pane back to its original window
+            if (activeWindowIdRef.current) {
+                const rightPane = await findRightPane();
+                if (rightPane) {
+                    try {
+                        await tmuxAdapter.swapPaneWithWindow(activeWindowIdRef.current, rightPane.id);
+                    } catch {
+                        // Original window may have been killed externally
+                    }
+                }
+            }
+
+            // Swap selected window's pane into the right position
+            const rightPane = await findRightPane();
+            if (rightPane) {
+                await tmuxAdapter.swapPaneWithWindow(win.windowId, rightPane.id);
+                activeWindowIdRef.current = win.windowId;
+                await tmuxAdapter.selectPane((await findRightPane())!.id);
+            }
+
+            showStatus(`Switched: ${win.name}`);
         } catch (error) {
-            setStatus(`Error: ${(error as Error).message}`);
+            showStatus(`Error: ${(error as Error).message}`);
         }
     };
 
@@ -386,9 +428,11 @@ function Dashboard({
             setSelectedIndex(prev => (prev - 1 + Math.max(displayedWindows.length, 1)) % Math.max(displayedWindows.length, 1));
         } else if (input === 'q') {
             try {
+                // Kill dashboard window (so old process dies) then detach
+                await tmuxAdapter.killWindow(`${dashWindowIndex}`);
                 await tmuxAdapter.detachClient();
             } catch (error) {
-                setStatus('Failed to detach: ' + (error as Error).message);
+                // If kill-window already caused detach, ignore
             }
         } else if (key.return) {
             const selected = displayedWindows[selectedIndex];
@@ -407,19 +451,19 @@ function Dashboard({
             // 필터 모드 토글
             setFilterMode(prev => prev === 'all' ? 'current' : 'all');
             setSelectedIndex(0);
-            setStatus(filterMode === 'all' ? 'Filter: current directory' : 'Filter: all windows');
+            showStatus(filterMode === 'all' ? 'Filter: current directory' : 'Filter: all windows');
         } else if (input === 'r') {
             process.stdout.write('\x1b[2J\x1b[H');
             process.stdout.emit('resize');
             await refreshWindows();
-            setStatus('Refreshed');
+            showStatus('Refreshed');
         }
     });
 
     // 새 Window 생성
     const handleCreateWindow = async () => {
         if (!newWindowName.trim()) {
-            setStatus('Window name required');
+            showStatus('Window name required');
             return;
         }
 
@@ -427,21 +471,28 @@ function Dashboard({
         setStatus(`Creating ${newWindowName}...`);
 
         try {
+            let newWindowId: string;
             if (isolationMode === 'worktree' && isGitRepo) {
                 // Worktree 모드: worktree 생성 후 해당 경로에서 window 열기
-                const newThread = await createThread(startPath, newWindowName.trim(), 'worktree');
-                await tmuxAdapter.createNewWindow(newThread.path, newWindowName.trim());
+                const newThread = await createThread(workspaceRoot, newWindowName.trim(), 'worktree');
+                newWindowId = await tmuxAdapter.createNewWindow(newThread.path, newWindowName.trim());
             } else {
                 // 일반 window 모드
-                await createWindowWithOptions(tmuxAdapter, startPath, newWindowName.trim());
+                newWindowId = await createWindowWithOptions(tmuxAdapter, startPath, newWindowName.trim());
             }
 
-            await refreshWindows();
+            const { windows: updatedWindows } = await refreshWindows();
             setInputMode('normal');
             setNewWindowName('');
-            setStatus(`Created: ${newWindowName}`);
+            showStatus(`Created: ${newWindowName}`);
+
+            // Auto-select the new window into the right pane
+            const newWin = updatedWindows.find(w => w.windowId === newWindowId);
+            if (newWin) {
+                await handleSelectWindow(newWin);
+            }
         } catch (error) {
-            setStatus(`Error: ${(error as Error).message}`);
+            showStatus(`Error: ${(error as Error).message}`);
         }
 
         setIsProcessing(false);
@@ -456,7 +507,36 @@ function Dashboard({
         setStatus(`Deleting ${selected.name}...`);
 
         try {
+            // If this window's pane is currently in the right pane, swap it back first
+            if (selected.windowId === activeWindowIdRef.current) {
+                const rightPane = await findRightPane();
+                if (rightPane) {
+                    try {
+                        await tmuxAdapter.swapPaneWithWindow(selected.windowId, rightPane.id);
+                    } catch { /* ignore */ }
+                }
+                activeWindowIdRef.current = null;
+            }
+
+            // Kill the tmux window
             await deleteWindowById(tmuxAdapter, selected.windowId);
+
+            // If it's a worktree-based window, also remove the worktree + branch
+            if (selected.worktreeBranch) {
+                try {
+                    await deleteThread(workspaceRoot, {
+                        id: selected.cwd,
+                        name: selected.worktreeBranch,
+                        type: 'worktree',
+                        path: selected.cwd,
+                        branch: selected.worktreeBranch,
+                        isolationMode: 'worktree',
+                        hasPane: false,
+                    });
+                } catch {
+                    // Worktree cleanup failed — window is already deleted
+                }
+            }
 
             const { windows: updatedWindows } = await refreshWindows();
             const filteredUpdated = filterMode === 'current'
@@ -465,10 +545,16 @@ function Dashboard({
             const newIndex = Math.min(selectedIndex, Math.max(0, filteredUpdated.length - 1));
             setSelectedIndex(newIndex);
 
+            // Auto-select the previous/next window into the right pane
+            const fallbackWin = filteredUpdated[newIndex];
+            if (fallbackWin) {
+                await handleSelectWindow(fallbackWin);
+            }
+
             setInputMode('normal');
-            setStatus(`Deleted: ${selected.name}`);
+            showStatus(`Deleted: ${selected.name}`);
         } catch (error) {
-            setStatus(`Error: ${(error as Error).message}`);
+            showStatus(`Error: ${(error as Error).message}`);
             setInputMode('normal');
         }
 
