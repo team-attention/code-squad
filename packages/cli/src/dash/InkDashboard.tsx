@@ -419,7 +419,15 @@ function Dashboard({
 
     // 키보드 입력 처리 (normal 모드)
     useInput(async (input, key) => {
-        if (isProcessing) return;
+        // Allow Escape to cancel during processing
+        if (isProcessing) {
+            if (key.escape) {
+                setIsProcessing(false);
+                setInputMode('normal');
+                showStatus('Cancelled');
+            }
+            return;
+        }
         if (inputMode !== 'normal') return;
 
         if (input === 'j' || key.downArrow) {
