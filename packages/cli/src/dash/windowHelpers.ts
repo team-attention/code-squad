@@ -21,11 +21,13 @@ export async function loadAllWindows(
         filteredWindows.map(async (w) => {
             const isGitRepo = await gitAdapter.isGitRepository(w.cwd);
             let worktreeBranch: string | undefined;
+            let projectRoot: string | undefined;
 
             if (isGitRepo) {
                 try {
                     const context = await gitAdapter.getWorktreeContext(w.cwd);
                     worktreeBranch = context.branch ?? undefined;
+                    projectRoot = context.mainRoot ?? undefined;
                 } catch {
                     // ignore
                 }
@@ -39,42 +41,12 @@ export async function loadAllWindows(
                 isActive: w.active,
                 isGitRepo,
                 worktreeBranch,
+                projectRoot,
             };
         })
     );
 
     return windowsWithGitInfo;
-}
-
-/**
- * 특정 경로 기준으로 window 필터링
- * - cwd가 basePath로 시작하거나
- * - basePath가 cwd로 시작하는 경우 (부모/자식 관계)
- */
-export function filterWindowsByPath(
-    windows: TmuxWindowInfo[],
-    basePath: string
-): TmuxWindowInfo[] {
-    const normalizedBase = basePath.replace(/\/$/, '');
-
-    return windows.filter(w => {
-        const normalizedCwd = w.cwd.replace(/\/$/, '');
-        return (
-            normalizedCwd.startsWith(normalizedBase) ||
-            normalizedBase.startsWith(normalizedCwd)
-        );
-    });
-}
-
-/**
- * 새 tmux window 생성
- */
-export async function createWindowWithOptions(
-    tmuxAdapter: TmuxAdapter,
-    cwd: string,
-    name?: string
-): Promise<string> {
-    return tmuxAdapter.createNewWindow(cwd, name);
 }
 
 /**

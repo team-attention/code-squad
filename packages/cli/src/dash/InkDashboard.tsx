@@ -1,16 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { render, Box, Text, useInput, useStdin } from 'ink';
 import TextInput from 'ink-text-input';
-import type { TmuxWindowInfo, IsolationMode } from './types.js';
+import type { TmuxWindowInfo } from './types.js';
 import { TmuxAdapter } from './TmuxAdapter.js';
-import { GitAdapter } from '../adapters/GitAdapter.js';
-import { loadAllWindows, filterWindowsByPath, createWindowWithOptions, deleteWindowById } from './windowHelpers.js';
+import { loadAllWindows, deleteWindowById } from './windowHelpers.js';
 import { createThread, deleteThread } from './threadHelpers.js';
-
-// 대시보드 pane 고정 너비
-const DASHBOARD_WIDTH = 35;
-
-const gitAdapter = new GitAdapter();
+import { expandTilde } from './pathUtils.js';
+import { useDirectorySuggestions } from './useDirectorySuggestions.js';
+import { usePathValidation } from './usePathValidation.js';
 
 // 마우스 이벤트 파싱
 interface MouseEvent {
@@ -68,9 +65,6 @@ function useMouse(onMouseClick: (row: number, col: number) => void, enabled: boo
 // 입력 모드
 type InputMode = 'normal' | 'new-window' | 'confirm-delete';
 
-// 필터 모드
-type FilterMode = 'all' | 'current';
-
 interface DashboardProps {
     workspaceRoot: string;
     repoName: string;
@@ -78,6 +72,7 @@ interface DashboardProps {
     initialWindows: TmuxWindowInfo[];
     tmuxAdapter: TmuxAdapter;
     dashWindowIndex: number;
+    paneHeight: number;
 }
 
 // Window 카드 컴포넌트
@@ -94,13 +89,11 @@ function WindowCard({
     const statusIcon = window.isActive ? '●' : '○';
     const statusColor = window.isActive ? 'green' : 'gray';
 
-    // Git repo이면 브랜치 표시, 아니면 경로 마지막 폴더 표시
-    const subText = window.worktreeBranch
-        ? window.worktreeBranch
+    const projectName = window.projectRoot
+        ? window.projectRoot.split('/').slice(-1)[0]
         : window.cwd.split('/').slice(-1)[0];
 
-    const typeBadge = window.isGitRepo ? 'G' : '>';
-    const typeColor = window.isGitRepo ? 'green' : 'gray';
+    const threadName = window.worktreeBranch ?? window.name;
 
     return (
         <Box
@@ -116,54 +109,124 @@ function WindowCard({
                 {isSelected && <Text color="red"> ✕</Text>}
             </Box>
             <Box>
-                <Text color={typeColor}>{typeBadge}</Text>
-                <Text color="gray"> {subText}</Text>
+                <Text color="gray">{projectName}</Text>
+                <Text color="gray"> → </Text>
+                <Text color="cyan">{threadName}</Text>
             </Box>
         </Box>
     );
 }
 
 // 포커스 필드 타입
-type FocusField = 'name' | 'path';
+type FocusField = 'name' | 'root';
 
 // 새 Window 폼 컴포넌트
 function NewWindowForm({
     windowName,
     onWindowNameChange,
-    startPath,
-    onStartPathChange,
-    isolationMode,
-    onToggleMode,
-    isGitRepo,
+    rootPath,
+    onRootPathChange,
+    validation,
     onSubmit,
     onCancel,
 }: {
     windowName: string;
     onWindowNameChange: (value: string) => void;
-    startPath: string;
-    onStartPathChange: (value: string) => void;
-    isolationMode: IsolationMode;
-    onToggleMode: () => void;
-    isGitRepo: boolean;
+    rootPath: string;
+    onRootPathChange: (value: string) => void;
+    validation: { status: 'valid' | 'creatable' | 'invalid'; isGitRepo: boolean } | null;
     onSubmit: () => void;
     onCancel: () => void;
 }) {
     const [focusedField, setFocusedField] = useState<FocusField>('name');
+    const dirSuggestions = useDirectorySuggestions();
 
-    useInput((input, key) => {
+    useInput(async (input, key) => {
         if (key.escape) {
-            onCancel();
-        } else if (key.return) {
-            onSubmit();
-        } else if (key.tab) {
-            setFocusedField(prev => prev === 'name' ? 'path' : 'name');
-        } else if (input === ' ' && isGitRepo && focusedField === 'name') {
-            onToggleMode();
+            if (dirSuggestions.isOpen) {
+                dirSuggestions.clearSuggestions();
+            } else {
+                onCancel();
+            }
+            return;
         }
+
+        if (key.return) {
+            if (dirSuggestions.isOpen) {
+                const accepted = dirSuggestions.acceptSelected(rootPath);
+                if (accepted) onRootPathChange(accepted);
+            } else {
+                onSubmit();
+            }
+            return;
+        }
+
+        if (key.tab) {
+            if (dirSuggestions.isOpen) {
+                dirSuggestions.clearSuggestions();
+            }
+            setFocusedField(prev => prev === 'name' ? 'root' : 'name');
+            return;
+        }
+
+        if (key.upArrow) {
+            if (dirSuggestions.isOpen) {
+                dirSuggestions.selectPrev();
+            } else {
+                setFocusedField('name');
+            }
+            return;
+        }
+
+        if (key.downArrow) {
+            if (dirSuggestions.isOpen) {
+                dirSuggestions.selectNext();
+            } else {
+                setFocusedField('root');
+            }
+            return;
+        }
+
     });
 
-    const modeColor = isolationMode === 'worktree' ? 'green' : isolationMode === 'window' ? 'blue' : 'gray';
-    const modeText = isolationMode === 'worktree' ? 'Worktree' : 'Window';
+    // Auto-trigger suggestions as user types
+    const handleRootPathChange = useCallback(async (value: string) => {
+        onRootPathChange(value);
+        if (value.endsWith('/')) {
+            const completed = await dirSuggestions.triggerComplete(value);
+            if (completed) onRootPathChange(completed);
+        } else if (value.length > 1 && value.includes('/')) {
+            await dirSuggestions.triggerComplete(value);
+        } else {
+            dirSuggestions.clearSuggestions();
+        }
+    }, [dirSuggestions, onRootPathChange]);
+
+    // Validation indicator
+    let validationIcon = '';
+    let validationColor: string | undefined;
+    let validationText = '';
+    if (validation) {
+        if (validation.status === 'valid') {
+            if (validation.isGitRepo) {
+                validationIcon = '✓';
+                validationColor = 'green';
+                validationText = 'git repo';
+            } else {
+                validationIcon = '✗';
+                validationColor = 'red';
+                validationText = 'not a git repo';
+            }
+        } else if (validation.status === 'creatable') {
+            validationIcon = '✗';
+            validationColor = 'red';
+            validationText = 'not a git repo';
+        } else {
+            validationIcon = '✗';
+            validationColor = 'red';
+            validationText = 'invalid path';
+        }
+    }
 
     return (
         <Box
@@ -183,28 +246,54 @@ function NewWindowForm({
                 />
             </Box>
             <Box marginTop={1}>
-                <Text color={focusedField === 'path' ? 'cyan' : 'gray'}>Path: </Text>
-                {focusedField === 'path' ? (
+                <Text color={focusedField === 'root' ? 'cyan' : 'gray'}>Root: </Text>
+                {focusedField === 'root' ? (
                     <TextInput
-                        value={startPath}
-                        onChange={onStartPathChange}
+                        value={rootPath}
+                        onChange={handleRootPathChange}
                         placeholder="/path/to/dir"
                         focus={true}
                     />
                 ) : (
-                    <Text color="gray">{startPath}</Text>
+                    <Text color="gray">{rootPath}</Text>
                 )}
             </Box>
-            {isGitRepo && (
-                <Box marginTop={1}>
-                    <Text>Mode: </Text>
-                    <Text color={modeColor}>● {modeText}</Text>
-                    <Text color="gray"> (Space to switch)</Text>
+
+            {/* Validation indicator */}
+            {validation && (
+                <Box>
+                    <Text>  </Text>
+                    <Text color={validationColor}>{validationIcon} {validationText}</Text>
                 </Box>
             )}
-            <Box marginTop={1}>
-                <Text color="gray">Enter: Create  Esc: Cancel</Text>
-            </Box>
+
+            {/* Autocomplete suggestions */}
+            {dirSuggestions.isOpen && dirSuggestions.visibleSuggestions.length > 0 && (
+                <Box flexDirection="column">
+                    {dirSuggestions.visibleSuggestions.map((s) => (
+                        <Box key={s.name}>
+                            <Text color={s.isSelected ? 'cyan' : 'gray'}>
+                                {s.isSelected ? ' > ' : '   '}
+                                {s.name}/
+                            </Text>
+                        </Box>
+                    ))}
+                    {dirSuggestions.hasMore && (
+                        <Text color="gray">   ↑↓ for more</Text>
+                    )}
+                </Box>
+            )}
+
+            {/* Hint bar */}
+            {dirSuggestions.isOpen ? (
+                <Box marginTop={1}>
+                    <Text color="gray">↑↓:select Enter:pick Esc:close</Text>
+                </Box>
+            ) : (
+                <Box marginTop={1}>
+                    <Text color="gray">Tab:field Enter:ok Esc:cancel</Text>
+                </Box>
+            )}
         </Box>
     );
 }
@@ -240,21 +329,14 @@ function DeleteConfirm({
 }
 
 // 힌트 바 컴포넌트
-function HintBar({ mode, filterMode }: { mode: InputMode; filterMode: FilterMode }) {
+function HintBar({ mode }: { mode: InputMode }) {
     if (mode === 'new-window') {
-        return (
-            <Box marginTop={1}>
-                <Text color="gray">Space: mode  Tab: field  Enter: create  Esc: cancel</Text>
-            </Box>
-        );
+        return null;
     }
-
-    const filterIndicator = filterMode === 'current' ? '[F:cwd]' : '[F:all]';
 
     return (
         <Box marginTop={1}>
-            <Text color="gray">↑↓/jk: nav  Enter: switch  f: filter  r: refresh  q: detach  </Text>
-            <Text color="cyan">{filterIndicator}</Text>
+            <Text color="gray">↑↓/jk: nav  Enter: switch  r: refresh  q: detach</Text>
         </Box>
     );
 }
@@ -267,49 +349,23 @@ function Dashboard({
     initialWindows,
     tmuxAdapter,
     dashWindowIndex,
+    paneHeight,
 }: DashboardProps) {
 
     const [windows, setWindows] = useState<TmuxWindowInfo[]>(initialWindows);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [inputMode, setInputMode] = useState<InputMode>('normal');
-    const [filterMode, setFilterMode] = useState<FilterMode>('all');
     const [newWindowName, setNewWindowName] = useState('');
-    const [startPath, setStartPath] = useState(workspaceRoot);
-    const [isolationMode, setIsolationMode] = useState<IsolationMode>('worktree');
+    const [rootPath, setRootPath] = useState(workspaceRoot);
 
-    // ref로 최신 값 유지 (클로저 문제 해결)
-    const isolationModeRef = useRef(isolationMode);
-    const newWindowNameRef = useRef(newWindowName);
-    useEffect(() => { isolationModeRef.current = isolationMode; }, [isolationMode]);
-    useEffect(() => { newWindowNameRef.current = newWindowName; }, [newWindowName]);
+    // Dynamic git repo detection from path validation
+    const { validation, isGitRepo: formIsGitRepo } = usePathValidation(rootPath);
 
-    // workspaceRoot도 ref로 유지
-    const workspaceRootRef = useRef(workspaceRoot);
-    useEffect(() => { workspaceRootRef.current = workspaceRoot; }, [workspaceRoot]);
-
-    // name 변경 핸들러 (공백 제거 + worktree 모드면 path도 직접 업데이트)
+    // name 변경 핸들러 (공백 제거)
     const handleWindowNameChange = useCallback((value: string) => {
         const sanitized = value.replace(/\s/g, '');
         setNewWindowName(sanitized);
-        // worktree 모드면 path도 바로 업데이트 (ref로 최신 값 참조)
-        if (isolationModeRef.current === 'worktree') {
-            setStartPath(sanitized ? `${workspaceRootRef.current}.worktree/${sanitized}` : workspaceRootRef.current);
-        }
     }, []);
-
-    // 모드 전환 핸들러
-    const handleToggleMode = useCallback(() => {
-        const newMode = isolationModeRef.current === 'worktree' ? 'window' : 'worktree';
-        setIsolationMode(newMode);
-        isolationModeRef.current = newMode;
-        // 모드 전환 시 path 업데이트
-        if (newMode === 'worktree') {
-            setStartPath(newWindowNameRef.current ? `${workspaceRootRef.current}.worktree/${newWindowNameRef.current}` : workspaceRootRef.current);
-        } else {
-            setStartPath(workspaceRootRef.current);
-        }
-    }, []);
-    const [isGitRepo, setIsGitRepo] = useState(!!currentBranch);
     const [status, setStatus] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     // Track which window's content is currently shown in the right pane
@@ -323,11 +379,6 @@ function Dashboard({
         statusTimerRef.current = setTimeout(() => setStatus(''), 2000);
     }, []);
 
-    // 필터링된 window 목록
-    const displayedWindows = filterMode === 'current'
-        ? filterWindowsByPath(windows, workspaceRoot)
-        : windows;
-
     // Window 목록 새로고침
     const refreshWindows = useCallback(async () => {
         const updatedWindows = await loadAllWindows(tmuxAdapter, dashWindowIndex);
@@ -335,11 +386,12 @@ function Dashboard({
         return { windows: updatedWindows };
     }, [tmuxAdapter, dashWindowIndex]);
 
-    // currentBranch가 있으면 git repo, 없으면 window 모드로 전환
+    // Auto-select first thread on restore (mount)
     useEffect(() => {
-        if (!currentBranch) {
-            setIsGitRepo(false);
-            setIsolationMode('window');
+        if (initialWindows.length === 0) return;
+        const first = initialWindows[0];
+        if (first) {
+            void handleSelectWindow(first);
         }
     }, []);
 
@@ -357,20 +409,20 @@ function Dashboard({
         if (row >= HEADER_ROWS + 1 && row <= HEADER_ROWS + NEW_WINDOW_ROWS + 1) {
             setInputMode('new-window');
             setNewWindowName('');
-            setStartPath(isolationModeRef.current === 'worktree' ? `${workspaceRoot}.worktree/` : workspaceRoot);
+            setRootPath(workspaceRoot);
             return;
         }
 
         // Window 리스트 클릭
-        if (row >= WINDOW_START_ROW && displayedWindows.length > 0) {
+        if (row >= WINDOW_START_ROW && windows.length > 0) {
             const windowIndex = Math.floor((row - WINDOW_START_ROW) / WINDOW_HEIGHT);
-            if (windowIndex >= 0 && windowIndex < displayedWindows.length) {
+            if (windowIndex >= 0 && windowIndex < windows.length) {
                 setSelectedIndex(windowIndex);
                 // 클릭하면 바로 전환
-                void handleSelectWindow(displayedWindows[windowIndex]);
+                void handleSelectWindow(windows[windowIndex]);
             }
         }
-    }, [isProcessing, inputMode, displayedWindows, workspaceRoot]);
+    }, [isProcessing, inputMode, windows, workspaceRoot]);
 
     // 마우스 이벤트 (normal 모드에서만 활성화)
     useMouse(handleMouseClick, inputMode === 'normal');
@@ -431,35 +483,42 @@ function Dashboard({
         if (inputMode !== 'normal') return;
 
         if (input === 'j' || key.downArrow) {
-            setSelectedIndex(prev => (prev + 1) % Math.max(displayedWindows.length, 1));
+            setSelectedIndex(prev => (prev + 1) % Math.max(windows.length, 1));
         } else if (input === 'k' || key.upArrow) {
-            setSelectedIndex(prev => (prev - 1 + Math.max(displayedWindows.length, 1)) % Math.max(displayedWindows.length, 1));
+            setSelectedIndex(prev => (prev - 1 + Math.max(windows.length, 1)) % Math.max(windows.length, 1));
         } else if (input === 'q') {
             try {
-                // Kill dashboard window (so old process dies) then detach
-                await tmuxAdapter.killWindow(`${dashWindowIndex}`);
-                await tmuxAdapter.detachClient();
-            } catch (error) {
-                // If kill-window already caused detach, ignore
+                // Swap active pane back to its original window before quitting
+                if (activeWindowIdRef.current) {
+                    const rightPane = await findRightPane();
+                    if (rightPane) {
+                        try {
+                            await tmuxAdapter.swapPaneWithWindow(activeWindowIdRef.current, rightPane.id);
+                        } catch {
+                            // Original window may have been killed externally
+                        }
+                    }
+                }
+                // Detach + kill dashboard window in one atomic tmux command.
+                // Thread windows stay alive in the detached session.
+                const sessionName = `csq-${repoName}`;
+                await tmuxAdapter.detachAndKillWindow(sessionName, dashWindowIndex);
+            } catch {
+                // Detach/kill may race, ignore
             }
         } else if (key.return) {
-            const selected = displayedWindows[selectedIndex];
+            const selected = windows[selectedIndex];
             if (selected) {
                 await handleSelectWindow(selected);
             }
         } else if (input === 'n' || input === '+') {
             setInputMode('new-window');
             setNewWindowName('');
-            setStartPath(isolationModeRef.current === 'worktree' ? `${workspaceRoot}.worktree/` : workspaceRoot);
+            setRootPath(workspaceRoot);
         } else if (input === 'd') {
-            if (displayedWindows[selectedIndex]) {
+            if (windows[selectedIndex]) {
                 setInputMode('confirm-delete');
             }
-        } else if (input === 'f') {
-            // 필터 모드 토글
-            setFilterMode(prev => prev === 'all' ? 'current' : 'all');
-            setSelectedIndex(0);
-            showStatus(filterMode === 'all' ? 'Filter: current directory' : 'Filter: all windows');
         } else if (input === 'r') {
             process.stdout.write('\x1b[2J\x1b[H');
             process.stdout.emit('resize');
@@ -475,19 +534,19 @@ function Dashboard({
             return;
         }
 
+        if (!validation || !formIsGitRepo) {
+            showStatus('Root must be a git repo');
+            return;
+        }
+
         setIsProcessing(true);
         setStatus(`Creating ${newWindowName}...`);
 
         try {
-            let newWindowId: string;
-            if (isolationMode === 'worktree' && isGitRepo) {
-                // Worktree 모드: worktree 생성 후 해당 경로에서 window 열기
-                const newThread = await createThread(workspaceRoot, newWindowName.trim(), 'worktree');
-                newWindowId = await tmuxAdapter.createNewWindow(newThread.path, newWindowName.trim());
-            } else {
-                // 일반 window 모드
-                newWindowId = await createWindowWithOptions(tmuxAdapter, startPath, newWindowName.trim());
-            }
+            const expandedRoot = expandTilde(rootPath);
+
+            const newThread = await createThread(workspaceRoot, newWindowName.trim(), expandedRoot);
+            const newWindowId = await tmuxAdapter.createNewWindow(newThread.path, newWindowName.trim());
 
             const { windows: updatedWindows } = await refreshWindows();
             setInputMode('normal');
@@ -508,7 +567,7 @@ function Dashboard({
 
     // Window 삭제
     const handleDeleteWindow = async () => {
-        const selected = displayedWindows[selectedIndex];
+        const selected = windows[selectedIndex];
         if (!selected) return;
 
         setIsProcessing(true);
@@ -535,11 +594,8 @@ function Dashboard({
                     await deleteThread(workspaceRoot, {
                         id: selected.cwd,
                         name: selected.worktreeBranch,
-                        type: 'worktree',
                         path: selected.cwd,
                         branch: selected.worktreeBranch,
-                        isolationMode: 'worktree',
-                        hasPane: false,
                     });
                 } catch {
                     // Worktree cleanup failed — window is already deleted
@@ -547,14 +603,11 @@ function Dashboard({
             }
 
             const { windows: updatedWindows } = await refreshWindows();
-            const filteredUpdated = filterMode === 'current'
-                ? filterWindowsByPath(updatedWindows, workspaceRoot)
-                : updatedWindows;
-            const newIndex = Math.min(selectedIndex, Math.max(0, filteredUpdated.length - 1));
+            const newIndex = Math.min(selectedIndex, Math.max(0, updatedWindows.length - 1));
             setSelectedIndex(newIndex);
 
             // Auto-select the previous/next window into the right pane
-            const fallbackWin = filteredUpdated[newIndex];
+            const fallbackWin = updatedWindows[newIndex];
             if (fallbackWin) {
                 await handleSelectWindow(fallbackWin);
             }
@@ -570,7 +623,7 @@ function Dashboard({
     };
 
     return (
-        <Box flexDirection="column" padding={1}>
+        <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} height={paneHeight}>
             {/* 헤더 */}
             <Box
                 borderStyle="round"
@@ -580,7 +633,7 @@ function Dashboard({
             >
                 <Text bold color="white">{repoName}</Text>
                 <Text color="cyan"> [{currentBranch}]</Text>
-                <Text color="gray"> ({displayedWindows.length})</Text>
+                <Text color="gray"> ({windows.length})</Text>
             </Box>
 
             {/* 새 Window 폼 또는 버튼 */}
@@ -588,11 +641,9 @@ function Dashboard({
                 <NewWindowForm
                     windowName={newWindowName}
                     onWindowNameChange={handleWindowNameChange}
-                    startPath={startPath}
-                    onStartPathChange={setStartPath}
-                    isolationMode={isolationMode}
-                    onToggleMode={handleToggleMode}
-                    isGitRepo={isGitRepo}
+                    rootPath={rootPath}
+                    onRootPathChange={setRootPath}
+                    validation={validation}
                     onSubmit={handleCreateWindow}
                     onCancel={() => {
                         setInputMode('normal');
@@ -611,9 +662,9 @@ function Dashboard({
             )}
 
             {/* 삭제 확인 */}
-            {inputMode === 'confirm-delete' && displayedWindows[selectedIndex] && (
+            {inputMode === 'confirm-delete' && windows[selectedIndex] && (
                 <DeleteConfirm
-                    windowName={displayedWindows[selectedIndex].name}
+                    windowName={windows[selectedIndex].name}
                     onConfirm={handleDeleteWindow}
                     onCancel={() => setInputMode('normal')}
                 />
@@ -621,12 +672,12 @@ function Dashboard({
 
             {/* Window 리스트 */}
             <Box flexDirection="column" marginTop={1}>
-                {displayedWindows.length === 0 ? (
+                {windows.length === 0 ? (
                     <Box borderStyle="round" borderColor="gray" paddingX={1}>
                         <Text color="gray">No windows yet</Text>
                     </Box>
                 ) : (
-                    displayedWindows.map((win, i) => (
+                    windows.map((win, i) => (
                         <WindowCard
                             key={win.windowId}
                             window={win}
@@ -637,7 +688,7 @@ function Dashboard({
             </Box>
 
             {/* 힌트 바 */}
-            <HintBar mode={inputMode} filterMode={filterMode} />
+            <HintBar mode={inputMode} />
 
             {/* 상태 메시지 */}
             {status && (

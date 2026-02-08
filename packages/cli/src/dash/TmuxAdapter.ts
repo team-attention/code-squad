@@ -187,6 +187,18 @@ export class TmuxAdapter {
     }
 
     /**
+     * 특정 session:index에 window 생성
+     * @returns 새로 생성된 window ID
+     */
+    async createWindowAtIndex(sessionName: string, index: number, cwd: string): Promise<string> {
+        const { stdout } = await exec(
+            `tmux new-window -d -t "${sessionName}:${index}" -c "${cwd}" -P -F "#{window_id}"`,
+            execOptions
+        );
+        return stdout.trim();
+    }
+
+    /**
      * 숨겨진 window 생성 (단일 pane)
      */
     async createHiddenWindow(cwd?: string): Promise<string> {
@@ -273,6 +285,14 @@ export class TmuxAdapter {
      */
     async getPaneWidth(paneId: string): Promise<number> {
         const { stdout } = await exec(`tmux display-message -t "${paneId}" -p "#{pane_width}"`, execOptions);
+        return parseInt(stdout.trim(), 10);
+    }
+
+    /**
+     * pane 높이 조회
+     */
+    async getPaneHeight(paneId: string): Promise<number> {
+        const { stdout } = await exec(`tmux display-message -t "${paneId}" -p "#{pane_height}"`, execOptions);
         return parseInt(stdout.trim(), 10);
     }
 
@@ -402,6 +422,14 @@ export class TmuxAdapter {
      */
     async detachClient(): Promise<void> {
         await exec('tmux detach-client', execOptions);
+    }
+
+    /**
+     * Detach client and kill a window in one atomic tmux command.
+     * Prevents flash of another window between kill and detach.
+     */
+    async detachAndKillWindow(sessionName: string, windowIndex: number): Promise<void> {
+        await exec(`tmux detach-client \\; kill-window -t "${sessionName}:${windowIndex}"`, execOptions);
     }
 
     /**

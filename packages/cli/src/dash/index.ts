@@ -122,18 +122,35 @@ export async function runDash(workspaceRoot: string): Promise<void> {
             // UX 설정 적용 (마우스 모드, 테두리 강조 등)
             await tmuxAdapter.applyUXSettings();
 
+            // 현재 실행 중인 스크립트의 절대 경로 사용
+            const scriptPath = process.argv[1];
+            const nodeCmd = `node "${scriptPath}"`;
+
             if (isNewSession) {
                 console.log(chalk.dim('Starting new tmux session...'));
-
-                // 현재 실행 중인 스크립트의 절대 경로 사용
-                const scriptPath = process.argv[1];
-                const nodeCmd = `node "${scriptPath}"`;
 
                 // 세션 내에서 같은 스크립트 재실행
                 await tmuxAdapter.sendKeys(`${sessionName}:0`, nodeCmd);
                 await tmuxAdapter.sendEnter(`${sessionName}:0`);
             } else {
-                console.log(chalk.dim('Attaching to existing session...'));
+                console.log(chalk.dim('Restoring dashboard...'));
+
+                // Kill leftover dashboard window at index 0 if it exists
+                try {
+                    await tmuxAdapter.killWindow(`${sessionName}:0`);
+                } catch {
+                    // Window 0 may not exist, ignore
+                }
+
+                // 기존 세션에 대시보드 window를 맨 앞에 생성
+                await tmuxAdapter.createWindowAtIndex(sessionName, 0, workspaceRoot);
+
+                // Make window 0 the active window so csq's tmux commands target it
+                await tmuxAdapter.selectWindow(`${sessionName}:0`);
+
+                // 새 window에서 csq 재실행
+                await tmuxAdapter.sendKeys(`${sessionName}:0`, nodeCmd);
+                await tmuxAdapter.sendEnter(`${sessionName}:0`);
             }
 
             // attach
@@ -201,12 +218,15 @@ export async function runDash(workspaceRoot: string): Promise<void> {
         // actual pane width so Ink calculates line counts correctly on first render.
         await new Promise(resolve => setTimeout(resolve, 50));
         process.stdout.columns = await tmuxAdapter.getPaneWidth(dashPaneId);
+        process.stdout.rows = await tmuxAdapter.getPaneHeight(dashPaneId);
 
         console.clear();
 
         // 대시보드 UI 실행 (Ink)
         // This never returns - the dashboard keeps running until tmux session is killed
         // When user presses 'q', the dashboard calls detachClient() directly
+        const paneHeight = await tmuxAdapter.getPaneHeight(dashPaneId);
+
         await runInkDashboard({
             workspaceRoot,
             repoName,
@@ -214,6 +234,7 @@ export async function runDash(workspaceRoot: string): Promise<void> {
             initialWindows: windows,
             tmuxAdapter,
             dashWindowIndex,
+            paneHeight,
         });
     } catch (error) {
         console.error(chalk.red(`Dashboard error: ${(error as Error).message}`));
