@@ -48,8 +48,15 @@ async function main() {
             await quitWorktreeCommand();
             break;
         case 'list':
-        default:
             await listWorktrees(workspaceRoot);
+            break;
+        default:
+            if (process.stdin.isTTY) {
+                const { runTui } = await import('./tui/App.js');
+                await runTui(workspaceRoot);
+            } else {
+                await listWorktrees(workspaceRoot);
+            }
     }
 }
 
@@ -75,7 +82,7 @@ csq() {
   fi
 
   local output
-  output=$(command csq "\$@" 2>&1)
+  output=$(command csq "\$@")
   local exit_code=\$?
 
   if [[ \$exit_code -ne 0 ]]; then

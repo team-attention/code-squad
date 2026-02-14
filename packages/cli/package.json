@@ -1,6 +1,6 @@
 {
   "name": "code-squad-cli",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "bin": {
     "csq": "./dist/index.js"
@@ -10,12 +10,10 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc && npm run bundle && npm run build:flip-ui",
-    "bundle": "esbuild dist/index.js --bundle --platform=node --format=esm --outfile=dist/index.js --allow-overwrite --external:@inquirer/core --external:@inquirer/prompts --external:chalk --external:chokidar --external:express --external:cors --external:clipboardy --external:open --external:fast-glob",
-    "build:flip-ui": "cd flip-ui && pnpm build && mkdir -p ../dist/flip-ui && cp -r dist ../dist/flip-ui/",
+    "build": "tsc && npm run bundle",
+    "bundle": "esbuild dist/index.js --bundle --platform=node --format=esm --outfile=dist/index.js --allow-overwrite --external:@inquirer/core --external:@inquirer/prompts --external:chalk --external:chokidar --external:express --external:cors --external:clipboardy --external:open --external:fast-glob --external:ink --external:react --external:react/jsx-runtime",
     "build:watch": "tsc --watch",
     "dev": "tsx src/index.ts",
-    "dev:flip": "pnpm build:flip-ui && tsx src/index.ts flip",
     "type-check": "tsc --noEmit",
     "clean": "rimraf dist",
     "prepublishOnly": "npm run clean && npm run build"
@@ -29,13 +27,16 @@
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "fast-glob": "^3.3.3",
-    "open": "^10.0.3"
+    "ink": "^6.7.0",
+    "open": "^10.0.3",
+    "react": "^19.2.4"
   },
   "devDependencies": {
     "@code-squad/core": "workspace:*",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "20.x",
+    "@types/react": "^19.2.14",
     "esbuild": "^0.27.2",
     "rimraf": "^6.1.2",
     "tsx": "^4.21.0",
