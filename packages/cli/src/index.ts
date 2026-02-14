@@ -53,7 +53,10 @@ async function main() {
         default:
             if (process.stdin.isTTY) {
                 const { runTui } = await import('./tui/App.js');
-                await runTui(workspaceRoot);
+                const selectedPath = await runTui(workspaceRoot);
+                if (selectedPath) {
+                    process.stdout.write(selectedPath + '\n');
+                }
             } else {
                 await listWorktrees(workspaceRoot);
             }

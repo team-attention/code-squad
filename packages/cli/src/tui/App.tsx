@@ -18,7 +18,7 @@ function shorten(p: string): string {
 
 type View = 'list' | 'create' | 'delete';
 
-function App({ initialWorktrees, root }: { initialWorktrees: WorktreeInfo[]; root: string }) {
+function App({ initialWorktrees, root, onSelect }: { initialWorktrees: WorktreeInfo[]; root: string; onSelect: (path: string) => void }) {
     const { exit } = useApp();
     const [view, setView] = useState<View>('list');
     const [worktrees, setWorktrees] = useState(initialWorktrees);
@@ -48,7 +48,7 @@ function App({ initialWorktrees, root }: { initialWorktrees: WorktreeInfo[]; roo
             } else if (key.downArrow) {
                 setCursor(c => Math.min(worktrees.length - 1, c + 1));
             } else if (key.return && worktrees.length > 0) {
-                process.stdout.write(worktrees[cursor].path + '\n');
+                onSelect(worktrees[cursor].path);
                 exit();
             } else if (ch === 'n') {
                 setView('create');
@@ -79,7 +79,7 @@ function App({ initialWorktrees, root }: { initialWorktrees: WorktreeInfo[]; roo
                         if (patterns.length > 0) {
                             await copyFilesWithPatterns(root, wtPath, patterns);
                         }
-                        process.stdout.write(wtPath + '\n');
+                        onSelect(wtPath);
                         exit();
                     })
                     .catch((e: Error) => {
@@ -218,8 +218,10 @@ function App({ initialWorktrees, root }: { initialWorktrees: WorktreeInfo[]; roo
     );
 }
 
-export async function runTui(workspaceRoot: string): Promise<void> {
+export async function runTui(workspaceRoot: string): Promise<string | null> {
     const worktrees = await git.listWorktrees(workspaceRoot);
+
+    let selectedPath: string | null = null;
 
     // Render to /dev/tty directly — bypasses stdout/stderr capture
     // so shell function's `2>&1` doesn't swallow TUI output
@@ -227,11 +229,17 @@ export async function runTui(workspaceRoot: string): Promise<void> {
     const ttyStream = new tty.WriteStream(fd);
 
     const { waitUntilExit } = render(
-        <App initialWorktrees={worktrees} root={workspaceRoot} />,
+        <App
+            initialWorktrees={worktrees}
+            root={workspaceRoot}
+            onSelect={(p) => { selectedPath = p; }}
+        />,
         { stdout: ttyStream }
     );
     await waitUntilExit();
 
     ttyStream.destroy();
     fs.closeSync(fd);
+
+    return selectedPath;
 }
