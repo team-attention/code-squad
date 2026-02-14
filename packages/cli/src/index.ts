@@ -82,7 +82,7 @@ csq() {
   fi
 
   local output
-  output=$(command csq "\$@")
+  output=$(command csq "\$@" 2>&1)
   local exit_code=\$?
 
   if [[ \$exit_code -ne 0 ]]; then

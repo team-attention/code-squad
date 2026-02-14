@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import * as path from 'path';
 import * as os from 'os';
+import * as fs from 'fs';
+import * as tty from 'tty';
 import type { WorktreeInfo } from '@code-squad/core';
 import { GitAdapter } from '../adapters/GitAdapter.js';
 import { loadConfig, getWorktreeCopyPatterns } from '../config.js';
@@ -218,9 +220,18 @@ function App({ initialWorktrees, root }: { initialWorktrees: WorktreeInfo[]; roo
 
 export async function runTui(workspaceRoot: string): Promise<void> {
     const worktrees = await git.listWorktrees(workspaceRoot);
+
+    // Render to /dev/tty directly — bypasses stdout/stderr capture
+    // so shell function's `2>&1` doesn't swallow TUI output
+    const fd = fs.openSync('/dev/tty', 'w');
+    const ttyStream = new tty.WriteStream(fd);
+
     const { waitUntilExit } = render(
         <App initialWorktrees={worktrees} root={workspaceRoot} />,
-        { stdout: process.stderr }
+        { stdout: ttyStream }
     );
     await waitUntilExit();
+
+    ttyStream.destroy();
+    fs.closeSync(fd);
 }
