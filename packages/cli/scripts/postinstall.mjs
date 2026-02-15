@@ -1,9 +1,12 @@
-import { existsSync, readFileSync, appendFileSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, appendFileSync, mkdirSync, accessSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { homedir } from 'os';
+import { execSync } from 'child_process';
 
-// Only run for global installs
-if (process.env.npm_config_global !== 'true') {
+// Only run for global installs - check if csq is in PATH
+try {
+    execSync('command -v csq', { stdio: 'ignore' });
+} catch {
     process.exit(0);
 }
 
