@@ -85,22 +85,23 @@ csq() {
   fi
 
   local output
-  output=$(command csq "\$@" 2>&1)
+  output=$(command csq "\$@")
   local exit_code=\$?
 
   if [[ \$exit_code -ne 0 ]]; then
-    echo "\$output"
     return \$exit_code
   fi
 
-  # 마지막 줄이 디렉토리면 cd
-  local last_line=$(echo "\$output" | tail -1)
-  if [[ -d "\$last_line" ]]; then
-    # 마지막 줄 제외한 나머지 출력
-    echo "\$output" | sed '\$d'
-    cd "\$last_line"
-  else
-    echo "\$output"
+  # stdout의 마지막 줄이 디렉토리면 cd
+  if [[ -n "\$output" ]]; then
+    local last_line=$(echo "\$output" | tail -1)
+    if [[ -d "\$last_line" ]]; then
+      local rest=$(echo "\$output" | sed '\$d')
+      [[ -n "\$rest" ]] && echo "\$rest"
+      cd "\$last_line"
+    else
+      echo "\$output"
+    fi
   fi
 }
 `.trim();
@@ -145,13 +146,13 @@ async function createWorktreeCommand(workspaceRoot: string, args: string[]) {
 
     try {
         await gitAdapter.createWorktree(worktreePath, name, workspaceRoot);
-        console.log(chalk.green(`✓ Created worktree: ${name}`));
+        console.error(chalk.green(`✓ Created worktree: ${name}`));
 
         // 설정 파일에서 복사할 패턴 읽어서 파일 복사
         await copyWorktreeFiles(workspaceRoot, worktreePath);
 
-        // 셸 함수가 마지막 줄을 보고 cd 실행
-        console.log(worktreePath);
+        // 셸 함수가 stdout의 마지막 줄을 보고 cd 실행
+        process.stdout.write(worktreePath + '\n');
     } catch (error) {
         console.error(
             chalk.red(`Failed to create worktree: ${(error as Error).message}`)
@@ -196,9 +197,9 @@ async function quitWorktreeCommand() {
         // 브랜치 삭제
         await gitAdapter.deleteBranch(context.branch, context.mainRoot, true);
 
-        console.log(chalk.green(`✓ Deleted worktree and branch: ${context.branch}`));
-        // 셸 함수가 마지막 줄을 보고 cd 실행
-        console.log(context.mainRoot);
+        console.error(chalk.green(`✓ Deleted worktree and branch: ${context.branch}`));
+        // 셸 함수가 stdout의 마지막 줄을 보고 cd 실행
+        process.stdout.write(context.mainRoot + '\n');
     } catch (error) {
         console.error(chalk.red(`Failed to quit: ${(error as Error).message}`));
         process.exit(1);
@@ -219,11 +220,11 @@ async function copyWorktreeFiles(sourceRoot: string, destRoot: string): Promise<
     const { copied, failed } = await copyFilesWithPatterns(sourceRoot, destRoot, patterns);
 
     if (copied.length > 0) {
-        console.log(chalk.green(`✓ Copied ${copied.length} file(s) to worktree`));
+        console.error(chalk.green(`✓ Copied ${copied.length} file(s) to worktree`));
     }
 
     if (failed.length > 0) {
-        console.log(chalk.yellow(`⚠ Failed to copy ${failed.length} file(s)`));
+        console.error(chalk.yellow(`⚠ Failed to copy ${failed.length} file(s)`));
     }
 }
 
