@@ -2,12 +2,15 @@
 
 import * as path from 'path';
 import chalk from 'chalk';
+import { spawn } from 'child_process';
 import { GitAdapter } from './adapters/GitAdapter.js';
 import { confirm } from '@inquirer/prompts';
 import type { WorktreeInfo } from '@code-squad/core';
 import { runFlip } from './flip/index.js';
 import { loadConfig, getWorktreeCopyPatterns } from './config.js';
 import { copyFilesWithPatterns } from './fileUtils.js';
+
+const hasShellWrapper = !!process.env.CSQ_WRAPPED;
 
 // Ctrl+C 시 깔끔하게 종료
 process.on('SIGINT', () => {
@@ -55,7 +58,7 @@ async function main() {
                 const { runTui } = await import('./tui/App.js');
                 const selectedPath = await runTui(workspaceRoot);
                 if (selectedPath) {
-                    process.stdout.write(selectedPath + '\n');
+                    await cdToDir(selectedPath);
                 }
             } else {
                 await listWorktrees(workspaceRoot);
@@ -85,7 +88,7 @@ csq() {
   fi
 
   local output
-  output=$(command csq "\$@")
+  output=$(CSQ_WRAPPED=1 command csq "\$@")
   local exit_code=\$?
 
   if [[ \$exit_code -ne 0 ]]; then
@@ -107,6 +110,25 @@ csq() {
 `.trim();
 
     console.log(script);
+}
+
+/**
+ * 디렉토리 이동: shell function이면 stdout으로 경로 출력, 아니면 subshell 실행
+ */
+function cdToDir(targetDir: string): Promise<void> {
+    if (hasShellWrapper) {
+        process.stdout.write(targetDir + '\n');
+        return Promise.resolve();
+    }
+
+    const shell = process.env.SHELL || '/bin/zsh';
+    return new Promise((resolve) => {
+        const child = spawn(shell, ['-l'], {
+            cwd: targetDir,
+            stdio: 'inherit',
+        });
+        child.on('close', () => resolve());
+    });
 }
 
 /**
@@ -151,8 +173,7 @@ async function createWorktreeCommand(workspaceRoot: string, args: string[]) {
         // 설정 파일에서 복사할 패턴 읽어서 파일 복사
         await copyWorktreeFiles(workspaceRoot, worktreePath);
 
-        // 셸 함수가 stdout의 마지막 줄을 보고 cd 실행
-        process.stdout.write(worktreePath + '\n');
+        await cdToDir(worktreePath);
     } catch (error) {
         console.error(
             chalk.red(`Failed to create worktree: ${(error as Error).message}`)
@@ -198,8 +219,7 @@ async function quitWorktreeCommand() {
         await gitAdapter.deleteBranch(context.branch, context.mainRoot, true);
 
         console.error(chalk.green(`✓ Deleted worktree and branch: ${context.branch}`));
-        // 셸 함수가 stdout의 마지막 줄을 보고 cd 실행
-        process.stdout.write(context.mainRoot + '\n');
+        await cdToDir(context.mainRoot);
     } catch (error) {
         console.error(chalk.red(`Failed to quit: ${(error as Error).message}`));
         process.exit(1);
