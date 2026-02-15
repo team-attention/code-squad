@@ -2,7 +2,6 @@
 
 import * as path from 'path';
 import chalk from 'chalk';
-import { spawn } from 'child_process';
 import { GitAdapter } from './adapters/GitAdapter.js';
 import { confirm } from '@inquirer/prompts';
 import type { WorktreeInfo } from '@code-squad/core';
@@ -58,7 +57,7 @@ async function main() {
                 const { runTui } = await import('./tui/App.js');
                 const selectedPath = await runTui(workspaceRoot);
                 if (selectedPath) {
-                    await cdToDir(selectedPath);
+                    cdToDir(selectedPath);
                 }
             } else {
                 await listWorktrees(workspaceRoot);
@@ -113,22 +112,16 @@ csq() {
 }
 
 /**
- * 디렉토리 이동: shell function이면 stdout으로 경로 출력, 아니면 subshell 실행
+ * 디렉토리 이동: shell function이면 stdout으로 경로 출력, 아니면 경고
  */
-function cdToDir(targetDir: string): Promise<void> {
+function cdToDir(targetDir: string): void {
     if (hasShellWrapper) {
         process.stdout.write(targetDir + '\n');
-        return Promise.resolve();
+        return;
     }
 
-    const shell = process.env.SHELL || '/bin/zsh';
-    return new Promise((resolve) => {
-        const child = spawn(shell, ['-l'], {
-            cwd: targetDir,
-            stdio: 'inherit',
-        });
-        child.on('close', () => resolve());
-    });
+    console.error(chalk.yellow('⚠ Shell integration not detected. Restart your terminal to enable auto-cd.'));
+    console.error(chalk.dim(`  cd ${targetDir}`));
 }
 
 /**
@@ -173,7 +166,7 @@ async function createWorktreeCommand(workspaceRoot: string, args: string[]) {
         // 설정 파일에서 복사할 패턴 읽어서 파일 복사
         await copyWorktreeFiles(workspaceRoot, worktreePath);
 
-        await cdToDir(worktreePath);
+        cdToDir(worktreePath);
     } catch (error) {
         console.error(
             chalk.red(`Failed to create worktree: ${(error as Error).message}`)
@@ -219,7 +212,7 @@ async function quitWorktreeCommand() {
         await gitAdapter.deleteBranch(context.branch, context.mainRoot, true);
 
         console.error(chalk.green(`✓ Deleted worktree and branch: ${context.branch}`));
-        await cdToDir(context.mainRoot);
+        cdToDir(context.mainRoot);
     } catch (error) {
         console.error(chalk.red(`Failed to quit: ${(error as Error).message}`));
         process.exit(1);
